@@ -1,0 +1,43 @@
+{
+  "name": "foundry-iptv",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --webpack -p 3003",
+    "build": "next build --webpack",
+    "start": "next start -p 3003",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "migrate": "tsx src/lib/db/migrate.ts --up",
+    "migrate:status": "tsx src/lib/db/migrate.ts --status",
+    "migrate:down": "tsx src/lib/db/migrate.ts --down"
+  },
+  "dependencies": {
+    "@panva/hkdf": "^1.2.1",
+    "bcryptjs": "^3.0.3",
+    "ioredis": "^5.10.0",
+    "jose": "^6.2.1",
+    "next": "16.1.6",
+    "next-auth": "^5.0.0-beta.30",
+    "pg": "^8.20.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20",
+    "@types/pg": "^8.18.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/uuid": "^10.0.0",
+    "babel-plugin-react-compiler": "1.0.0",
+    "dotenv": "^17.3.1",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "tailwindcss": "^4",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  }
+}
