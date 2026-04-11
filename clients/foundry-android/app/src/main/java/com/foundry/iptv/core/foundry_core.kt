@@ -782,6 +782,18 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -807,12 +819,18 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_foundry_core_fn_constructor_apiclient_new(`baseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
+    fun uniffi_foundry_core_fn_method_apiclient_add_deck_entry(`ptr`: Pointer,`deckId`: RustBuffer.ByValue,`channelId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_foundry_core_fn_method_apiclient_add_to_list(`ptr`: Pointer,`listId`: RustBuffer.ByValue,`channelId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_foundry_core_fn_method_apiclient_ai_search(`ptr`: Pointer,`query`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_foundry_core_fn_method_apiclient_change_quality(`ptr`: Pointer,`sid`: RustBuffer.ByValue,`quality`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_foundry_core_fn_method_apiclient_create_deck(`ptr`: Pointer,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_foundry_core_fn_method_apiclient_delete_deck(`ptr`: Pointer,`deckId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_foundry_core_fn_method_apiclient_get_deck(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_foundry_core_fn_method_apiclient_get_epg(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`hours`: Int,uniffi_out_err: UniffiRustCallStatus, 
@@ -855,8 +873,14 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_foundry_core_fn_method_apiclient_record_watch_history(`ptr`: Pointer,`mediaType`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,`displayName`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_foundry_core_fn_method_apiclient_remove_deck_entry(`ptr`: Pointer,`deckId`: RustBuffer.ByValue,`entryId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_foundry_core_fn_method_apiclient_rename_deck(`ptr`: Pointer,`deckId`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_foundry_core_fn_method_apiclient_search(`ptr`: Pointer,`query`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_foundry_core_fn_method_apiclient_set_deck_skip_commercials(`ptr`: Pointer,`deckId`: RustBuffer.ByValue,`skip`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_foundry_core_fn_method_apiclient_set_token(`ptr`: Pointer,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_foundry_core_fn_method_apiclient_start_deck_stream(`ptr`: Pointer,`deckId`: RustBuffer.ByValue,`entryIndex`: Int,`quality`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -987,11 +1011,17 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_foundry_core_checksum_func_exchange_pairing_code(
     ): Short
+    fun uniffi_foundry_core_checksum_method_apiclient_add_deck_entry(
+    ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_add_to_list(
     ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_ai_search(
     ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_change_quality(
+    ): Short
+    fun uniffi_foundry_core_checksum_method_apiclient_create_deck(
+    ): Short
+    fun uniffi_foundry_core_checksum_method_apiclient_delete_deck(
     ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_get_deck(
     ): Short
@@ -1035,7 +1065,13 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_record_watch_history(
     ): Short
+    fun uniffi_foundry_core_checksum_method_apiclient_remove_deck_entry(
+    ): Short
+    fun uniffi_foundry_core_checksum_method_apiclient_rename_deck(
+    ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_search(
+    ): Short
+    fun uniffi_foundry_core_checksum_method_apiclient_set_deck_skip_commercials(
     ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_set_token(
     ): Short
@@ -1073,6 +1109,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_foundry_core_checksum_func_exchange_pairing_code() != 60988.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_foundry_core_checksum_method_apiclient_add_deck_entry() != 2895.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_foundry_core_checksum_method_apiclient_add_to_list() != 50567.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1080,6 +1119,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_foundry_core_checksum_method_apiclient_change_quality() != 18102.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_foundry_core_checksum_method_apiclient_create_deck() != 64023.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_foundry_core_checksum_method_apiclient_delete_deck() != 17484.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_foundry_core_checksum_method_apiclient_get_deck() != 19278.toShort()) {
@@ -1145,7 +1190,16 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_foundry_core_checksum_method_apiclient_record_watch_history() != 49721.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_foundry_core_checksum_method_apiclient_remove_deck_entry() != 60920.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_foundry_core_checksum_method_apiclient_rename_deck() != 2264.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_foundry_core_checksum_method_apiclient_search() != 32473.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_foundry_core_checksum_method_apiclient_set_deck_skip_commercials() != 59464.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_foundry_core_checksum_method_apiclient_set_token() != 28276.toShort()) {
@@ -1532,11 +1586,17 @@ private class JavaLangRefCleanable(
 }
 public interface ApiClientInterface {
     
+    fun `addDeckEntry`(`deckId`: kotlin.String, `channelId`: kotlin.String): kotlin.String
+    
     fun `addToList`(`listId`: kotlin.String, `channelId`: kotlin.String)
     
     fun `aiSearch`(`query`: kotlin.String): SearchResult
     
     fun `changeQuality`(`sid`: kotlin.String, `quality`: kotlin.String): kotlin.String
+    
+    fun `createDeck`(`name`: kotlin.String): kotlin.String
+    
+    fun `deleteDeck`(`deckId`: kotlin.String)
     
     fun `getDeck`(`id`: kotlin.String): Deck
     
@@ -1584,7 +1644,13 @@ public interface ApiClientInterface {
      */
     fun `recordWatchHistory`(`mediaType`: MediaType, `id`: kotlin.String, `displayName`: kotlin.String?)
     
+    fun `removeDeckEntry`(`deckId`: kotlin.String, `entryId`: kotlin.String)
+    
+    fun `renameDeck`(`deckId`: kotlin.String, `name`: kotlin.String)
+    
     fun `search`(`query`: kotlin.String): SearchResult
+    
+    fun `setDeckSkipCommercials`(`deckId`: kotlin.String, `skip`: kotlin.Boolean)
     
     /**
      * Store a device bearer token on the client.
@@ -1695,6 +1761,19 @@ open class ApiClient: Disposable, AutoCloseable, ApiClientInterface {
     }
 
     
+    @Throws(ApiException::class)override fun `addDeckEntry`(`deckId`: kotlin.String, `channelId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(ApiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_add_deck_entry(
+        it, FfiConverterString.lower(`deckId`),FfiConverterString.lower(`channelId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
     @Throws(ApiException::class)override fun `addToList`(`listId`: kotlin.String, `channelId`: kotlin.String)
         = 
     callWithPointer {
@@ -1730,6 +1809,31 @@ open class ApiClient: Disposable, AutoCloseable, ApiClientInterface {
     }
     )
     }
+    
+
+    
+    @Throws(ApiException::class)override fun `createDeck`(`name`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(ApiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_create_deck(
+        it, FfiConverterString.lower(`name`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(ApiException::class)override fun `deleteDeck`(`deckId`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(ApiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_delete_deck(
+        it, FfiConverterString.lower(`deckId`),_status)
+}
+    }
+    
     
 
     
@@ -2008,6 +2112,30 @@ open class ApiClient: Disposable, AutoCloseable, ApiClientInterface {
     
 
     
+    @Throws(ApiException::class)override fun `removeDeckEntry`(`deckId`: kotlin.String, `entryId`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(ApiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_remove_deck_entry(
+        it, FfiConverterString.lower(`deckId`),FfiConverterString.lower(`entryId`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(ApiException::class)override fun `renameDeck`(`deckId`: kotlin.String, `name`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(ApiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_rename_deck(
+        it, FfiConverterString.lower(`deckId`),FfiConverterString.lower(`name`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(ApiException::class)override fun `search`(`query`: kotlin.String): SearchResult {
             return FfiConverterTypeSearchResult.lift(
     callWithPointer {
@@ -2018,6 +2146,18 @@ open class ApiClient: Disposable, AutoCloseable, ApiClientInterface {
     }
     )
     }
+    
+
+    
+    @Throws(ApiException::class)override fun `setDeckSkipCommercials`(`deckId`: kotlin.String, `skip`: kotlin.Boolean)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(ApiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_set_deck_skip_commercials(
+        it, FfiConverterString.lower(`deckId`),FfiConverterBoolean.lower(`skip`),_status)
+}
+    }
+    
     
 
     
@@ -2266,6 +2406,7 @@ public object FfiConverterTypeDeck: FfiConverterRustBuffer<Deck> {
 
 
 data class DeckEntry (
+    var `entryId`: kotlin.String, 
     var `channelId`: kotlin.String, 
     var `position`: kotlin.Int, 
     var `inCommercial`: kotlin.Boolean, 
@@ -2282,6 +2423,7 @@ public object FfiConverterTypeDeckEntry: FfiConverterRustBuffer<DeckEntry> {
     override fun read(buf: ByteBuffer): DeckEntry {
         return DeckEntry(
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
             FfiConverterInt.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterOptionalTypeChannel.read(buf),
@@ -2289,6 +2431,7 @@ public object FfiConverterTypeDeckEntry: FfiConverterRustBuffer<DeckEntry> {
     }
 
     override fun allocationSize(value: DeckEntry) = (
+            FfiConverterString.allocationSize(value.`entryId`) +
             FfiConverterString.allocationSize(value.`channelId`) +
             FfiConverterInt.allocationSize(value.`position`) +
             FfiConverterBoolean.allocationSize(value.`inCommercial`) +
@@ -2296,6 +2439,7 @@ public object FfiConverterTypeDeckEntry: FfiConverterRustBuffer<DeckEntry> {
     )
 
     override fun write(value: DeckEntry, buf: ByteBuffer) {
+            FfiConverterString.write(value.`entryId`, buf)
             FfiConverterString.write(value.`channelId`, buf)
             FfiConverterInt.write(value.`position`, buf)
             FfiConverterBoolean.write(value.`inCommercial`, buf)

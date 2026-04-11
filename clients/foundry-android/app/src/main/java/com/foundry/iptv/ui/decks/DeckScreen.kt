@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -47,31 +48,21 @@ import com.foundry.iptv.core.DeckEntry
 import com.foundry.iptv.core.MediaType
 import com.foundry.iptv.player.WarmPlayerPool
 import com.foundry.iptv.ui.common.ApiClientHolder
+import com.foundry.iptv.ui.common.ChannelPicker
 import com.foundry.iptv.ui.common.WatchTracker
 import com.foundry.iptv.ui.focus.KeyboardHandler
 import com.foundry.iptv.ui.image.ChannelLogo
 import com.foundry.iptv.ui.theme.FoundryColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Deck playback screen — the hero feature of Track J Wave 3-A.
+ * Deck playback + editing screen.
  *
- * A [Deck] is a small ordered list of channels (usually 2-6). This screen
- * loads the deck's entries, warms an [com.foundry.iptv.player.WarmPlayerPool]
- * entry for each, then binds the currently-focused entry's ExoPlayer to the
- * big full-screen [PlayerView]. D-pad Left/Right on the bottom thumbnail row
- * swaps which warm player owns the surface — target visible latency on
- * FireStick 4K Max is under 200 ms, measured via `logcat -s WarmPool:V`.
- *
- * ## Channel metadata for thumbnails
- *
- * The current `get_deck` FFI (W1-A) returns [DeckEntry] with only
- * `channelId`, `position`, and `inCommercial` — no names or logos. To show
- * rich thumbnails we fetch `listChannels()` once and build an in-memory
- * `Map<String, Channel>` to look up each entry's metadata. This is cheap at
- * load time and lets the thumbnail row use the existing
- * [ChannelLogo] component with no changes.
+ * View mode: hero PlayerView driven by the warm pool + thumbnail row.
+ * Edit mode: overlay with Add / Remove per-entry controls and a Delete
+ * button that returns to the list.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -83,7 +74,6 @@ fun DeckScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Pool survives focus changes but is torn down on screen dispose.
     val pool = remember {
         WarmPlayerPool(context, WarmPlayerPool.recommendedCapacity(context))
     }
@@ -94,19 +84,17 @@ fun DeckScreen(
     var deck by remember(deckId) { mutableStateOf<Deck?>(null) }
     var error by remember(deckId) { mutableStateOf<String?>(null) }
     var focusedIndex by remember(deckId) { mutableStateOf(0) }
-    // Shared PlayerView for the full-screen hero video. We keep a reference
-    // to it outside the AndroidView factory so the key-event handler can pass
-    // it to pool.attachFocused on every swap.
     var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
-    // Reload counter: bumped once after we prepare all warm entries, so the
-    // LaunchedEffect(focusedIndex, ...) can then perform the initial attach.
     var warmReady by remember(deckId) { mutableStateOf(false) }
 
+    // Edit-mode state.
+    var editing by remember { mutableStateOf(false) }
+    var showPicker by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf(false) }
+    var reloadTick by remember { mutableStateOf(0) }
+
     // --- load the deck and prewarm the pool ------------------------------
-    // W5-A: DeckEntry now carries `channel: Channel?` directly from the
-    // server, so we no longer need to run a separate `listChannels()` join
-    // to render thumbnails — each entry already knows its own name/logo.
-    LaunchedEffect(deckId) {
+    LaunchedEffect(deckId, reloadTick) {
         val loaded = withContext(Dispatchers.IO) {
             runCatching {
                 val client = ApiClientHolder.get(context)
@@ -120,25 +108,23 @@ fun DeckScreen(
         }
         loaded.onSuccess { (d, warms) ->
             deck = d
-            // prepare() must run on the main thread (ExoPlayer).
+            pool.releaseAll()
             for ((channelId, hlsUrl) in warms) {
                 pool.prepare(channelId, hlsUrl)
             }
             warmReady = true
+            if (focusedIndex >= d.entries.size) focusedIndex = 0
         }.onFailure {
             error = it.message ?: "Failed to load deck"
         }
     }
 
-    // --- perform the initial + subsequent focus attaches ----------------
     LaunchedEffect(warmReady, focusedIndex, playerViewRef, deck) {
         val d = deck ?: return@LaunchedEffect
         if (!warmReady) return@LaunchedEffect
         val view = playerViewRef ?: return@LaunchedEffect
         val entry = d.entries.getOrNull(focusedIndex) ?: return@LaunchedEffect
         pool.attachFocused(entry.channelId, view)
-        // Track whatever the user is actively watching as they step through
-        // the deck — fire-and-forget via the shared WatchTracker.
         WatchTracker.recordWatch(
             scope, context, MediaType.LIVE,
             entry.channelId,
@@ -146,7 +132,14 @@ fun DeckScreen(
         )
     }
 
-    KeyboardHandler(onBack = onBack) {
+    KeyboardHandler(onBack = {
+        when {
+            showPicker -> showPicker = false
+            pendingDelete -> pendingDelete = false
+            editing -> editing = false
+            else -> onBack()
+        }
+    }) {
         Box(
             modifier = modifier
                 .fillMaxSize()
@@ -189,7 +182,6 @@ fun DeckScreen(
                                     }.also { playerViewRef = it }
                                 },
                             )
-                            // Deck name overlay.
                             Text(
                                 text = d.name,
                                 color = FoundryColors.OnBackground,
@@ -198,24 +190,137 @@ fun DeckScreen(
                                     .align(Alignment.TopStart)
                                     .padding(24.dp),
                             )
+                            // Top-right Edit toggle.
+                            Row(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(24.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                HeaderButton(
+                                    label = if (editing) "Done" else "Edit",
+                                    onClick = { editing = !editing },
+                                )
+                                if (editing) {
+                                    HeaderButton(
+                                        label = "Delete Deck",
+                                        onClick = { pendingDelete = true },
+                                    )
+                                }
+                            }
                         }
 
-                        // Thumbnail row (30% of height).
-                        DeckThumbRow(
-                            deck = d,
-                            focusedIndex = focusedIndex,
-                            onFocusChange = { newIndex ->
-                                if (newIndex != focusedIndex &&
-                                    newIndex in d.entries.indices
-                                ) {
-                                    focusedIndex = newIndex
+                        // Bottom row: thumbnails (view mode) or edit row.
+                        if (editing) {
+                            DeckEditRow(
+                                deck = d,
+                                onAdd = { showPicker = true },
+                                onRemove = { entry ->
+                                    scope.launch {
+                                        val result = withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                ApiClientHolder.get(context)
+                                                    .removeDeckEntry(d.id, entry.entryId)
+                                            }
+                                        }
+                                        result.onSuccess { reloadTick += 1 }
+                                            .onFailure { error = it.message ?: "Remove failed" }
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(0.3f),
+                            )
+                        } else {
+                            DeckThumbRow(
+                                deck = d,
+                                focusedIndex = focusedIndex,
+                                onFocusChange = { newIndex ->
+                                    if (newIndex != focusedIndex &&
+                                        newIndex in d.entries.indices
+                                    ) {
+                                        focusedIndex = newIndex
+                                    }
+                                },
+                                onBack = onBack,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(0.3f),
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Channel picker overlay.
+            if (showPicker) {
+                ChannelPicker(
+                    onPick = { channel ->
+                        showPicker = false
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    ApiClientHolder.get(context)
+                                        .addDeckEntry(deckId, channel.id)
                                 }
-                            },
-                            onBack = onBack,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(0.3f),
+                            }
+                            result.onSuccess { reloadTick += 1 }
+                                .onFailure { error = it.message ?: "Add failed" }
+                        }
+                    },
+                    onDismiss = { showPicker = false },
+                )
+            }
+
+            // Delete-deck confirmation.
+            if (pendingDelete) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xCC000000)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .width(520.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(FoundryColors.Surface)
+                            .border(2.dp, FoundryColors.Border, RoundedCornerShape(16.dp))
+                            .padding(24.dp),
+                    ) {
+                        Text(
+                            "Delete \"${deck?.name ?: ""}\"?",
+                            color = FoundryColors.OnBackground,
+                            fontSize = 20.sp,
                         )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Removes the deck and all its entries.",
+                            color = FoundryColors.OnSurfaceVariant,
+                            fontSize = 14.sp,
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            HeaderButton(
+                                label = "Cancel",
+                                onClick = { pendingDelete = false },
+                            )
+                            HeaderButton(
+                                label = "Delete",
+                                onClick = {
+                                    pendingDelete = false
+                                    scope.launch {
+                                        val result = withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                ApiClientHolder.get(context).deleteDeck(deckId)
+                                            }
+                                        }
+                                        result.onSuccess { onBack() }
+                                            .onFailure { error = it.message ?: "Delete failed" }
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -224,11 +329,8 @@ fun DeckScreen(
 }
 
 /**
- * Horizontal row of deck-entry thumbnails along the bottom of [DeckScreen].
- *
- * Focus lives on a single invisible `focusable` Box that owns the key events.
- * D-pad Left/Right moves [focusedIndex] through the entries; OK/Back fall
- * through to the parent `KeyboardHandler`.
+ * Horizontal row of deck-entry thumbnails along the bottom of [DeckScreen]
+ * in view mode.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -253,19 +355,16 @@ private fun DeckThumbRow(
                 when (ev.key) {
                     Key.DirectionLeft -> {
                         if (focusedIndex > 0) {
-                            onFocusChange(focusedIndex - 1)
-                            true
+                            onFocusChange(focusedIndex - 1); true
                         } else false
                     }
                     Key.DirectionRight -> {
                         if (focusedIndex < deck.entries.size - 1) {
-                            onFocusChange(focusedIndex + 1)
-                            true
+                            onFocusChange(focusedIndex + 1); true
                         } else false
                     }
                     Key.Back, Key.Escape -> {
-                        onBack()
-                        true
+                        onBack(); true
                     }
                     else -> false
                 }
@@ -280,6 +379,100 @@ private fun DeckThumbRow(
                 focused = index == focusedIndex,
             )
         }
+    }
+}
+
+/** Bottom row shown in edit mode: remove buttons per entry + Add Channel. */
+@Composable
+private fun DeckEditRow(
+    deck: Deck,
+    onAdd: () -> Unit,
+    onRemove: (DeckEntry) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .background(Color(0xCC0A0A0A))
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        deck.entries.forEach { entry ->
+            EditableEntryTile(
+                entry = entry,
+                channel = entry.channel,
+                onRemove = { onRemove(entry) },
+            )
+        }
+        // Trailing Add button.
+        Box(
+            modifier = Modifier
+                .width(140.dp)
+                .height(150.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(FoundryColors.SurfaceVariant),
+        ) {
+            HeaderButton(
+                label = "+ Add Channel",
+                onClick = onAdd,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        }
+    }
+}
+
+@Composable
+private fun EditableEntryTile(
+    entry: DeckEntry,
+    channel: Channel?,
+    onRemove: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val fallbackName = channel?.name ?: entry.channelId.take(8)
+    Column(
+        modifier = Modifier
+            .width(160.dp)
+            .height(150.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                if (focused) FoundryColors.OrangeDim else FoundryColors.SurfaceVariant,
+            )
+            .border(
+                width = if (focused) 3.dp else 0.dp,
+                color = if (focused) FoundryColors.Orange else Color.Transparent,
+                shape = RoundedCornerShape(10.dp),
+            )
+            .padding(8.dp)
+            .focusable()
+            .onFocusChanged { focused = it.isFocused }
+            .onKeyEvent { ev ->
+                if (ev.type == KeyEventType.KeyDown &&
+                    (ev.key == Key.DirectionCenter || ev.key == Key.Enter ||
+                            ev.key == Key.NumPadEnter)
+                ) {
+                    onRemove(); true
+                } else false
+            },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (channel != null) {
+            ChannelLogo(channel = channel, sizeDp = 56.dp)
+        } else {
+            Spacer(Modifier.height(56.dp))
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = fallbackName,
+            color = FoundryColors.OnSurface,
+            fontSize = 12.sp,
+            maxLines = 1,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = if (focused) "OK to remove" else "Remove",
+            color = Color(0xFFFF8080),
+            fontSize = 11.sp,
+        )
     }
 }
 
