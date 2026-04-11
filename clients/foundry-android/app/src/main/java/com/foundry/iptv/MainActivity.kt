@@ -12,8 +12,17 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.foundry.iptv.ui.PairingScreen
+import com.foundry.iptv.ui.decks.DeckListScreen
+import com.foundry.iptv.ui.guide.GuideScreen
 import com.foundry.iptv.ui.hub.FoundryHub
+import com.foundry.iptv.ui.hub.HubSection
+import com.foundry.iptv.ui.live.LiveScreen
+import com.foundry.iptv.ui.multiview.MultiviewScreen
+import com.foundry.iptv.ui.search.SearchScreen
+import com.foundry.iptv.ui.series.SeriesScreen
+import com.foundry.iptv.ui.settings.SettingsScreen
 import com.foundry.iptv.ui.theme.FoundryTheme
+import com.foundry.iptv.ui.vod.VodScreen
 
 /**
  * Root navigation destinations.
@@ -62,7 +71,31 @@ fun FoundryApp(startDestination: String) {
             }
 
             composable(Destinations.HUB) {
-                FoundryHub()
+                FoundryHub(
+                    sectionContent = { section, mod ->
+                        when (section) {
+                            HubSection.Live -> LiveScreen(modifier = mod)
+                            HubSection.Guide -> GuideScreen(modifier = mod)
+                            HubSection.Vod -> VodScreen(modifier = mod)
+                            HubSection.Series -> SeriesScreen(modifier = mod)
+                            HubSection.Decks -> DeckListScreen(modifier = mod)
+                            HubSection.Multiview -> MultiviewScreen(modifier = mod)
+                            HubSection.Search -> SearchScreen(modifier = mod)
+                            HubSection.Settings -> SettingsScreen(
+                                modifier = mod,
+                                onUnpair = {
+                                    // SettingsScreen already cleared device_token
+                                    // + server_url from foundry_prefs before calling
+                                    // this callback. Pop the hub and land back on
+                                    // pairing as the new start destination.
+                                    navController.navigate(Destinations.PAIRING) {
+                                        popUpTo(Destinations.HUB) { inclusive = true }
+                                    }
+                                },
+                            )
+                        }
+                    },
+                )
             }
         }
     }
