@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -54,9 +55,33 @@ fun FoundryHub(
     var selected by rememberSaveable { mutableStateOf(HubSection.Live) }
     // True when focus lives in the content pane; false when it lives on the rail.
     var contentFocused by remember { mutableStateOf(false) }
+    // Monotonically-incremented whenever the user presses Down from the rail.
+    // A LaunchedEffect keyed on (this, selected) retries requestFocus() a
+    // handful of times with short delays. Retries matter because child
+    // screens (Decks, Multiview) may still be loading when the keypress
+    // arrives — during the "Loading…" state the content subtree has zero
+    // focusable descendants, so focusRestorer() silently no-ops and focus
+    // stays stuck on the rail. The retries give the child a chance to
+    // compose a focusable (e.g. "+ New Deck") before we give up.
+    var focusContentTick by remember { mutableStateOf(0) }
 
     val railFirstTab = rememberFirstFocus()
     val contentRequester = remember { FocusRequester() }
+
+    // Retry the content focus request after Down. We loop a bounded number
+    // of times so a slow network fetch doesn't trap focus on the rail
+    // forever — after ~600 ms we give up and the user can press Down again.
+    LaunchedEffect(focusContentTick, selected) {
+        if (focusContentTick == 0 || !contentFocused) return@LaunchedEffect
+        // Try immediately, then on a short schedule. Each iteration is a
+        // cheap no-op if the request already succeeded (focusRequester
+        // state doesn't know — we just keep asking).
+        val delays = longArrayOf(0L, 60L, 120L, 200L, 300L)
+        for (d in delays) {
+            if (d > 0L) delay(d)
+            runCatching { contentRequester.requestFocus() }
+        }
+    }
 
     // Cold start: the rail's first tab auto-requests focus via firstFocus().
     // (No extra call needed here — firstFocus() is wired in TabRail below.)
@@ -80,6 +105,7 @@ fun FoundryHub(
             onFocusContent = {
                 contentFocused = true
                 runCatching { contentRequester.requestFocus() }
+                focusContentTick += 1
             },
             firstTabRequester = railFirstTab,
             modifier = Modifier
