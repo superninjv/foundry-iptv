@@ -13,7 +13,7 @@
  */
 
 import * as RadixTooltip from '@radix-ui/react-tooltip';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 export function TooltipProvider({ children }: { children: ReactNode }) {
   return (
@@ -30,17 +30,19 @@ interface TooltipProps {
 }
 
 export function Tooltip({ label, children, side = 'right' }: TooltipProps) {
-  // Evaluate lazily on first render (client only). useMemo to avoid re-running
-  // on every render while still being client-only (useState initializer runs
-  // only once, so it's safe for this one-shot media query check).
-  const [disabled] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true; // SSR: disable until hydrated
-    const isNativeClient = navigator.userAgent.includes('FoundryNative');
-    const isHoverNone = window.matchMedia('(hover: none)').matches;
-    return isNativeClient || isHoverNone;
-  });
+  // Render passthrough on both SSR AND initial client render. Activate the
+  // Radix tree only after mount so React sees identical HTML on both sides
+  // and hydration is clean. Radix's <Slot> injects `data-state` onto the
+  // child on the client; if we rendered it during SSR we'd get a mismatch
+  // against the server's plain markup.
+  const [enabled, setEnabled] = useState(false);
+  useEffect(() => {
+    if (navigator.userAgent.includes('FoundryNative')) return;
+    if (window.matchMedia('(hover: none)').matches) return;
+    setEnabled(true);
+  }, []);
 
-  if (disabled) {
+  if (!enabled) {
     return <>{children}</>;
   }
 

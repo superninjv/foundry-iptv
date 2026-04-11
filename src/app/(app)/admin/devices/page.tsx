@@ -34,7 +34,9 @@ async function generatePairingCode(formData: FormData) {
   const half = () =>
     Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
   const code = `${half()}-${half()}`;
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+  // 24-hour TTL — single-use anyway (consumed_at marks it spent), so there's
+  // no point squeezing the admin with a 10-minute stopwatch.
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
   await query(
     `INSERT INTO iptv_device_pairing_codes (code, created_by, label, platform, expires_at)
@@ -98,7 +100,7 @@ export default async function AdminDevicesPage({
           className="mb-6 rounded-xl border p-5"
           style={{ borderColor: 'var(--accent)', backgroundColor: 'var(--bg-raised)' }}
         >
-          <p className="text-sm font-medium mb-2">New Pairing Code (expires {codeExpires ? new Date(codeExpires).toLocaleTimeString() : 'in 10 min'})</p>
+          <p className="text-sm font-medium mb-2">New Pairing Code (expires {codeExpires ? new Date(codeExpires).toLocaleString() : 'in 24 hours'})</p>
           <p
             className="text-4xl font-bold tracking-widest font-mono"
             style={{ color: 'var(--accent)' }}
@@ -106,7 +108,7 @@ export default async function AdminDevicesPage({
             {newCode}
           </p>
           <p className="mt-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
-            Enter this code on the device to pair it. The code expires in 10 minutes.
+            Enter this code on the device to pair it. Single-use; expires in 24 hours.
           </p>
         </div>
       )}

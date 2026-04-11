@@ -26,15 +26,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.itemsIndexed
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import com.foundry.iptv.ApiClient
-import com.foundry.iptv.Channel
+import com.foundry.iptv.core.ApiClient
+import com.foundry.iptv.core.Channel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -53,6 +57,8 @@ fun ChannelListScreen(onChannelSelected: (hlsUrl: String) -> Unit) {
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var errorText by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
+    // First-item focus requester so D-pad lands somewhere when the list mounts.
+    val firstItemFocus = remember { FocusRequester() }
 
     // Load channels once on mount.
     LaunchedEffect(Unit) {
@@ -121,14 +127,37 @@ fun ChannelListScreen(onChannelSelected: (hlsUrl: String) -> Unit) {
                         )
                     }
 
-                    TvLazyColumn(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
                         itemsIndexed(channels) { index, channel ->
                             ChannelRowItem(
                                 channel = channel,
                                 onSelect = { hlsUrl ->
                                     onChannelSelected(hlsUrl)
                                 },
+                                // Attach focus requester to the first item so
+                                // the LaunchedEffect below can plant initial
+                                // D-pad focus when channels first appear.
+                                modifier = if (index == 0) {
+                                    Modifier
+                                        .focusRequester(firstItemFocus)
+                                        .focusable()
+                                } else {
+                                    Modifier
+                                },
                             )
+                        }
+                    }
+                    // Request initial focus once channels are loaded. Wrapped
+                    // in LaunchedEffect(channels.size) so it fires exactly
+                    // when the list transitions from empty → populated.
+                    LaunchedEffect(channels.size) {
+                        if (channels.isNotEmpty()) {
+                            try {
+                                firstItemFocus.requestFocus()
+                            } catch (_: IllegalStateException) {
+                                // Focus target not yet attached to composition;
+                                // ignore — the user can press D-pad to focus.
+                            }
                         }
                     }
                 }
@@ -142,11 +171,12 @@ fun ChannelListScreen(onChannelSelected: (hlsUrl: String) -> Unit) {
 private fun ChannelRowItem(
     channel: Channel,
     onSelect: (hlsUrl: String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
 
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(72.dp)
             .padding(horizontal = 16.dp, vertical = 4.dp),
