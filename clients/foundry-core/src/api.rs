@@ -588,6 +588,93 @@ impl ApiClient {
         self.start_stream(&channel_id, quality).await
     }
 
+    /// `POST /api/decks` — create a new deck. Returns the server-assigned id
+    /// as a string (the server returns it as a JSON number but [`Value`]
+    /// accommodates both).
+    pub async fn create_deck(&self, name: &str) -> Result<String, ApiError> {
+        let url = self.url("/api/decks");
+        let body = serde_json::json!({ "name": name });
+        let req = self.authed(self.http.post(url))?.json(&body);
+        let resp = req.send().await?;
+        let resp = Self::check(resp).await?;
+        let v: Value = resp.json().await?;
+        let id = match v.get("id") {
+            Some(Value::String(s)) => s.clone(),
+            Some(Value::Number(n)) => n.to_string(),
+            _ => return Err(ApiError::Other("create_deck: missing id".into())),
+        };
+        Ok(id)
+    }
+
+    /// `DELETE /api/decks/<id>` — delete a deck.
+    pub async fn delete_deck(&self, deck_id: &str) -> Result<(), ApiError> {
+        let url = self.url(&format!("/api/decks/{}", deck_id));
+        let req = self.authed(self.http.delete(url))?;
+        let resp = req.send().await?;
+        Self::check(resp).await?;
+        Ok(())
+    }
+
+    /// `PATCH /api/decks/<id>` with `{ name }` — rename the deck.
+    pub async fn rename_deck(&self, deck_id: &str, name: &str) -> Result<(), ApiError> {
+        let url = self.url(&format!("/api/decks/{}", deck_id));
+        let body = serde_json::json!({ "name": name });
+        let req = self.authed(self.http.patch(url))?.json(&body);
+        let resp = req.send().await?;
+        Self::check(resp).await?;
+        Ok(())
+    }
+
+    /// `PATCH /api/decks/<id>` with `{ skipCommercials }` — toggle the
+    /// server-side skip-commercials flag.
+    pub async fn set_deck_skip_commercials(
+        &self,
+        deck_id: &str,
+        skip: bool,
+    ) -> Result<(), ApiError> {
+        let url = self.url(&format!("/api/decks/{}", deck_id));
+        let body = serde_json::json!({ "skipCommercials": skip });
+        let req = self.authed(self.http.patch(url))?.json(&body);
+        let resp = req.send().await?;
+        Self::check(resp).await?;
+        Ok(())
+    }
+
+    /// `POST /api/decks/<id>/entries` — append an entry. The server requires
+    /// a `ttl` in {`12h`, `24h`, `48h`, `never`}; we default to `24h` to match
+    /// the web's default. Returns the newly-created entry id as a string.
+    pub async fn add_deck_entry(
+        &self,
+        deck_id: &str,
+        channel_id: &str,
+    ) -> Result<String, ApiError> {
+        let url = self.url(&format!("/api/decks/{}/entries", deck_id));
+        let body = serde_json::json!({ "channelId": channel_id, "ttl": "24h" });
+        let req = self.authed(self.http.post(url))?.json(&body);
+        let resp = req.send().await?;
+        let resp = Self::check(resp).await?;
+        let v: Value = resp.json().await?;
+        let id = match v.get("id") {
+            Some(Value::String(s)) => s.clone(),
+            Some(Value::Number(n)) => n.to_string(),
+            _ => return Err(ApiError::Other("add_deck_entry: missing id".into())),
+        };
+        Ok(id)
+    }
+
+    /// `DELETE /api/decks/<id>/entries/<entryId>` — remove a deck entry.
+    pub async fn remove_deck_entry(
+        &self,
+        deck_id: &str,
+        entry_id: &str,
+    ) -> Result<(), ApiError> {
+        let url = self.url(&format!("/api/decks/{}/entries/{}", deck_id, entry_id));
+        let req = self.authed(self.http.delete(url))?;
+        let resp = req.send().await?;
+        Self::check(resp).await?;
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------
     // VOD / Series
     // -----------------------------------------------------------------------
@@ -1055,10 +1142,17 @@ fn deck_from_value(v: Value) -> Deck {
             arr.iter()
                 .enumerate()
                 .map(|(i, e)| {
+                    let entry_id = e
+                        .get("id")
+                        .map(|x| match x {
+                            Value::String(s) => s.clone(),
+                            Value::Number(n) => n.to_string(),
+                            _ => String::new(),
+                        })
+                        .unwrap_or_default();
                     let channel_id = e
                         .get("channelId")
                         .or_else(|| e.get("channel_id"))
-                        .or_else(|| e.get("id"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
@@ -1082,6 +1176,7 @@ fn deck_from_value(v: Value) -> Deck {
                             }
                         });
                     DeckEntry {
+                        entry_id,
                         channel_id,
                         position,
                         in_commercial,
