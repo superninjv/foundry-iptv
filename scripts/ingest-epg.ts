@@ -265,6 +265,21 @@ async function* streamProgrammes(
 
 const BATCH_SIZE = 500;
 
+/** Write ingest progress to iptv_config so the setup wizard can poll it.
+ *  Best-effort — swallows failures (table may not exist on pre-009 DBs). */
+async function writeProgress(stage: string, count: number): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO iptv_config (key, value, updated_at)
+       VALUES ('epg_ingest_progress', $1, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
+      [JSON.stringify({ stage, count, ts: Date.now() })],
+    );
+  } catch {
+    // ignore
+  }
+}
+
 async function upsertBatch(rows: Programme[]): Promise<void> {
   if (rows.length === 0) return;
   const values: unknown[] = [];
@@ -305,12 +320,15 @@ async function main(): Promise<void> {
   const rawXmltvUrl = await getConfigOrEnv('xmltv_url', 'RAW_XMLTV_URL')
     || `${THREADFIN_URL}/raw/prime.xml`;
 
+  await writeProgress('scanning_m3u', 0);
   const epgIdMap = await buildEpgIdMap(rawM3uUrl);
   if (epgIdMap.size === 0) {
     console.warn('[ingest-epg] No tvg-ids found in raw M3U — nothing to ingest.');
+    await writeProgress('done', 0);
     await pool.end();
     return;
   }
+  await writeProgress('scanning_xmltv', epgIdMap.size);
 
   const deleteResult = await pool.query(
     `DELETE FROM iptv_epg_cache WHERE end_at < NOW()`,
@@ -342,9 +360,14 @@ async function main(): Promise<void> {
     buffer.set(key, prog);
     if (buffer.size >= BATCH_SIZE) {
       await flush();
+      // Only report progress occasionally to avoid hammering the KV.
+      if (upserted % (BATCH_SIZE * 10) === 0) {
+        await writeProgress('upserting', upserted);
+      }
     }
   }
   await flush();
+  await writeProgress('done', upserted);
 
   console.log(
     `[ingest-epg] Upserted ${upserted} programmes (${seenDupes} duplicates collapsed).`,

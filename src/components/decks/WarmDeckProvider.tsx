@@ -43,6 +43,7 @@ export interface WarmDeckContextValue {
   demote(channelId: string): Promise<void>;
   drop(channelId: string): Promise<void>;
   getHandle(channelId: string): WarmStreamHandle | undefined;
+  getVideoElement(channelId: string): HTMLVideoElement | null;
   attachVideo(channelId: string, slot: HTMLElement | null): void;
 }
 
@@ -316,6 +317,13 @@ export function WarmDeckProvider({ children, cap }: WarmDeckProviderProps) {
     return handles.current.get(channelId);
   }, []);
 
+  /** Direct accessor for the live <video> element so PlayerControls can
+   *  drive play/pause/seek on the pool-owned element without re-instantiating
+   *  hls.js. Returns null when no handle exists yet. */
+  const getVideoElement = useCallback((channelId: string): HTMLVideoElement | null => {
+    return handles.current.get(channelId)?.video ?? null;
+  }, []);
+
   const attachVideo = useCallback((channelId: string, slot: HTMLElement | null): void => {
     const handle = handles.current.get(channelId);
     if (!handle) return;
@@ -346,6 +354,7 @@ export function WarmDeckProvider({ children, cap }: WarmDeckProviderProps) {
     demote,
     drop,
     getHandle,
+    getVideoElement,
     attachVideo,
   };
 

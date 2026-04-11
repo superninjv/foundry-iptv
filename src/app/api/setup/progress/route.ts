@@ -12,12 +12,19 @@ export async function GET() {
     getConfig('epg_ingest_progress'),
   ]);
 
+  // ingest-epg.ts writes JSON {stage, count, ts} to this key; parse safely.
+  let progress: { stage: string; count: number; ts: number } | null = null;
+  if (ingestProgress) {
+    try {
+      progress = JSON.parse(ingestProgress);
+    } catch {
+      progress = null;
+    }
+  }
+
   return NextResponse.json({
     setup_complete: setupComplete === 'true',
     last_epg_ingest_at: lastIngestAt,
-    // TODO: ingest-epg.ts should write 'epg_ingest_progress' key to iptv_config
-    // (e.g. "Imported 12,403 / 52,000 channels") so this field is non-null.
-    // Until then, clients fall back to a time-based spinner.
-    epg_ingest_progress: ingestProgress,
+    epg_ingest_progress: progress,
   });
 }

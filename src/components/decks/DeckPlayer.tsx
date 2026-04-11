@@ -17,7 +17,7 @@ import { ChannelPicker } from '@/components/multiview/ChannelPicker';
 import { MultiviewGrid } from '@/components/multiview/MultiviewGrid';
 import type { Deck, DeckViewMode, DeckLayout, DeckEntry } from '@/lib/decks/db';
 import { EditIcon, AddIcon } from '@/components/icons';
-import { WarmDeckProvider, useWarmStream } from '@/components/decks/WarmDeckProvider';
+import { WarmDeckProvider, useWarmStream, useWarmDeck } from '@/components/decks/WarmDeckProvider';
 
 interface DeckPlayerProps {
   initialDeck: Deck;
@@ -132,9 +132,29 @@ function SingleChannelView({
   onToggleEditor?: () => void;
   onAddChannel: () => void;
 }) {
-  // We create a dummy videoRef for PlayerControls; the actual <video> is
-  // managed by WarmDeckProvider. Attach a ref to the warm video once known.
+  // PlayerControls wants an HTMLVideoElement ref. The real element is owned
+  // by WarmDeckProvider's pool — grab it from there and keep this ref in sync
+  // so scrub/pause/volume all drive the live <video>.
+  const { getVideoElement } = useWarmDeck();
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    // Handle may not exist yet on first mount; poll briefly until it does.
+    const tryAttach = () => {
+      if (cancelled) return;
+      const el = getVideoElement(entry.channelId);
+      if (el) {
+        videoRef.current = el;
+      } else {
+        setTimeout(tryAttach, 100);
+      }
+    };
+    tryAttach();
+    return () => {
+      cancelled = true;
+      videoRef.current = null;
+    };
+  }, [entry.channelId, getVideoElement]);
 
   return (
     <PlayerOverlay
