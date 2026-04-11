@@ -1,7 +1,303 @@
-// Foundry TV — stub UI.
-// Replace with real screen components in the implementation wave.
+// Foundry TV — Slint UI
+// Three screens: Pairing, ChannelList, NowPlaying.
 
-import { Button, VerticalBox } from "std-widgets.slint";
+import { Button, LineEdit, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+
+// ---------------------------------------------------------------------------
+// Data model types
+// ---------------------------------------------------------------------------
+
+export struct ChannelItem {
+    id: string,
+    name: string,
+    group: string,
+    logo_url: string,
+}
+
+// ---------------------------------------------------------------------------
+// Pairing Screen
+// ---------------------------------------------------------------------------
+
+component PairingScreen inherits Rectangle {
+    callback pair-requested(string, string);  // (server_url, pairing_code)
+
+    property <string> status-text: "Enter your server URL and pairing code.";
+    property <bool>   busy: false;
+
+    background: #0d0d0d;
+
+    VerticalBox {
+        alignment: center;
+        padding: 80px;
+        spacing: 24px;
+
+        Text {
+            text: "Foundry IPTV";
+            font-size: 56px;
+            color: #ffffff;
+            horizontal-alignment: center;
+            font-weight: 700;
+        }
+
+        Text {
+            text: "First-time Setup";
+            font-size: 24px;
+            color: #aaaaaa;
+            horizontal-alignment: center;
+        }
+
+        Rectangle { height: 40px; }
+
+        Text {
+            text: "Server URL";
+            font-size: 18px;
+            color: #cccccc;
+        }
+
+        server-url-input := LineEdit {
+            placeholder-text: "http://192.168.1.x or http://foundry.local";
+            font-size: 20px;
+            height: 56px;
+        }
+
+        Text {
+            text: "Pairing Code";
+            font-size: 18px;
+            color: #cccccc;
+        }
+
+        code-input := LineEdit {
+            placeholder-text: "6-character code from the web admin";
+            font-size: 20px;
+            height: 56px;
+        }
+
+        Rectangle { height: 16px; }
+
+        Button {
+            text: root.busy ? "Pairing…" : "Pair Device";
+            enabled: !root.busy;
+            height: 56px;
+            clicked => {
+                root.pair-requested(server-url-input.text, code-input.text);
+            }
+        }
+
+        Text {
+            text: root.status-text;
+            font-size: 16px;
+            color: #ff6666;
+            horizontal-alignment: center;
+            visible: root.status-text != "Enter your server URL and pairing code.";
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Channel List Screen
+// ---------------------------------------------------------------------------
+
+component ChannelRow inherits Rectangle {
+    in property <ChannelItem> channel;
+    in property <bool>        focused;
+
+    callback selected(string);  // channel id
+
+    height: 72px;
+    background: focused ? #1a6eb5 : transparent;
+
+    animate background { duration: 120ms; }
+
+    HorizontalBox {
+        padding: 16px;
+        spacing: 16px;
+        alignment: start;
+
+        // Placeholder logo square
+        Rectangle {
+            width: 40px;
+            height: 40px;
+            background: #333333;
+            border-radius: 4px;
+
+            Text {
+                text: "▶";
+                color: #aaaaaa;
+                font-size: 18px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        VerticalBox {
+            alignment: center;
+
+            Text {
+                text: channel.name;
+                font-size: 20px;
+                color: focused ? #ffffff : #dddddd;
+                overflow: elide;
+            }
+
+            Text {
+                text: channel.group;
+                font-size: 14px;
+                color: focused ? #c0d8f0 : #888888;
+                overflow: elide;
+            }
+        }
+    }
+
+    TouchArea {
+        clicked => { root.selected(root.channel.id); }
+    }
+}
+
+component ChannelListScreen inherits Rectangle {
+    in property <[ChannelItem]> channels;
+    in-out property <int> focused-index: 0;
+
+    callback channel-selected(string);  // channel id
+    callback key-pressed(string) -> bool;
+
+    background: #0d0d0d;
+
+    FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.UpArrow) {
+                if (focused-index > 0) {
+                    focused-index -= 1;
+                }
+                return accept;
+            }
+            if (event.text == Key.DownArrow) {
+                if (focused-index < channels.length - 1) {
+                    focused-index += 1;
+                }
+                return accept;
+            }
+            if (event.text == Key.Return) {
+                if (channels.length > 0) {
+                    channel-selected(channels[focused-index].id);
+                }
+                return accept;
+            }
+            reject
+        }
+
+        VerticalBox {
+            padding: 0px;
+            spacing: 0px;
+
+            // Header
+            Rectangle {
+                height: 72px;
+                background: #111111;
+
+                HorizontalBox {
+                    padding: 24px;
+                    Text {
+                        text: "Live TV";
+                        font-size: 28px;
+                        color: #ffffff;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // Channel rows
+            ScrollView {
+                for ch[i] in channels: ChannelRow {
+                    channel: ch;
+                    focused: i == focused-index;
+                    selected(id) => { channel-selected(id); }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Now-Playing Screen
+// ---------------------------------------------------------------------------
+
+component NowPlayingScreen inherits Rectangle {
+    in property <string> channel-name: "";
+    in property <string> program-title: "";
+    in property <bool>   overlay-visible: true;
+
+    callback stop-requested();
+
+    background: #000000;
+
+    // Fullscreen black area — GStreamer renders into a separate native window
+    // layered behind this one when embedding is unavailable.
+    Text {
+        visible: overlay-visible;
+        text: "▶  Playing on external window";
+        color: #666666;
+        font-size: 18px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    // Transient overlay
+    if overlay-visible: Rectangle {
+        background: #00000099;
+        height: 120px;
+        y: parent.height - self.height;
+
+        animate opacity { duration: 300ms; }
+
+        HorizontalBox {
+            padding: 32px;
+            spacing: 24px;
+            alignment: start;
+
+            VerticalBox {
+                alignment: center;
+                Text {
+                    text: channel-name;
+                    font-size: 22px;
+                    color: #ffffff;
+                    font-weight: 700;
+                }
+                Text {
+                    text: program-title;
+                    font-size: 16px;
+                    color: #cccccc;
+                    overflow: elide;
+                }
+            }
+
+            // Spacer
+            Rectangle { horizontal-stretch: 1; }
+
+            Button {
+                text: "■ Stop";
+                height: 48px;
+                clicked => { stop-requested(); }
+            }
+        }
+    }
+
+    FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape || event.text == Key.Back) {
+                stop-requested();
+                return accept;
+            }
+            reject
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Root Window — routes between screens
+// ---------------------------------------------------------------------------
+
+export enum AppScreen { Pairing, ChannelList, NowPlaying }
 
 export component AppWindow inherits Window {
     title: "Foundry TV";
@@ -9,26 +305,33 @@ export component AppWindow inherits Window {
     preferred-height: 1080px;
     background: #0d0d0d;
 
-    VerticalBox {
-        alignment: center;
+    // State exposed to Rust
+    in-out property <AppScreen> current-screen: AppScreen.Pairing;
+    in-out property <[ChannelItem]> channels: [];
+    in-out property <int>  focused-channel-index: 0;
+    in property <string>   now-playing-channel: "";
+    in property <string>   now-playing-program: "";
+    in-out property <bool> overlay-visible: true;
 
-        Text {
-            text: "Foundry TV";
-            font-size: 48px;
-            color: #ffffff;
-            horizontal-alignment: center;
-        }
+    // Callbacks into Rust
+    callback pair-requested(string, string);
+    callback channel-selected(string);
+    callback stop-requested();
 
-        Text {
-            text: "Connecting to server…";
-            font-size: 24px;
-            color: #aaaaaa;
-            horizontal-alignment: center;
-        }
+    if current-screen == AppScreen.Pairing: PairingScreen {
+        pair-requested(url, code) => { root.pair-requested(url, code); }
+    }
 
-        Button {
-            text: "Settings";
-            // TODO: wire to state machine Navigate(Screen::Settings)
-        }
+    if current-screen == AppScreen.ChannelList: ChannelListScreen {
+        channels: root.channels;
+        focused-index <=> root.focused-channel-index;
+        channel-selected(id) => { root.channel-selected(id); }
+    }
+
+    if current-screen == AppScreen.NowPlaying: NowPlayingScreen {
+        channel-name: root.now-playing-channel;
+        program-title: root.now-playing-program;
+        overlay-visible: root.overlay-visible;
+        stop-requested => { root.stop-requested(); }
     }
 }
