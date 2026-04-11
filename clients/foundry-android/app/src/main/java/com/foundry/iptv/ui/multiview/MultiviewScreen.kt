@@ -52,6 +52,7 @@ import com.foundry.iptv.player.PlayerHost
 import com.foundry.iptv.player.WarmPlayerPool
 import com.foundry.iptv.ui.common.ApiClientHolder
 import com.foundry.iptv.ui.common.ChannelPicker
+import com.foundry.iptv.ui.common.LibraryStore
 import com.foundry.iptv.ui.common.WatchTracker
 import com.foundry.iptv.ui.focus.KeyboardHandler
 import com.foundry.iptv.ui.focus.firstFocus
@@ -148,20 +149,22 @@ fun MultiviewScreen(modifier: Modifier = Modifier) {
     }
 
     // Resolve the tiles: fetch channel metadata + start streams for any
-    // populated slot, ignore nulls.
+    // populated slot, ignore nulls. Uses the library-scoped channel list
+    // (history-filtered) so we avoid the 52k-channel JNI crossing that
+    // used to slow every layout change on the FireStick Lite.
     LaunchedEffect(slots) {
         error = null
         val current = slots
-        val result = withContext(Dispatchers.IO) {
-            runCatching {
-                val client = ApiClientHolder.get(context)
-                val ids = current.filterNotNull().distinct()
-                if (ids.isEmpty()) {
-                    List<MultiviewTile?>(current.size) { null }
-                } else {
-                    val allChannels = client.listChannels()
-                    val byId = allChannels.associateBy { it.id }
-                    val sessionsById = mutableMapOf<String, MultiviewTile>()
+        val result = runCatching {
+            val ids = current.filterNotNull().distinct()
+            if (ids.isEmpty()) {
+                List<MultiviewTile?>(current.size) { null }
+            } else {
+                val libraryChannels = LibraryStore.getLive(context)
+                val byId = libraryChannels.associateBy { it.id }
+                val sessionsById = mutableMapOf<String, MultiviewTile>()
+                withContext(Dispatchers.IO) {
+                    val client = ApiClientHolder.get(context)
                     for (id in ids) {
                         val ch = byId[id] ?: continue
                         val session = client.startStream(id)
@@ -171,8 +174,8 @@ fun MultiviewScreen(modifier: Modifier = Modifier) {
                             hlsUrl = session.hlsUrl,
                         )
                     }
-                    current.map { slot -> slot?.let { sessionsById[it] } }
                 }
+                current.map { slot -> slot?.let { sessionsById[it] } }
             }
         }
         result.onSuccess { newTiles ->
