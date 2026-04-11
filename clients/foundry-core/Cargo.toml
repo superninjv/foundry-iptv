@@ -24,7 +24,10 @@ chrono.workspace = true
 uuid.workspace = true
 sha2.workspace = true
 hex.workspace = true
+dirs.workspace = true
+toml.workspace = true
 uniffi = { version = "0.28", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
+wiremock.workspace = true

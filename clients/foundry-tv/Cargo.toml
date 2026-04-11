@@ -19,6 +19,7 @@ anyhow.workspace = true
 slint = "1.8"
 gstreamer = "0.23"
 gstreamer-app = "0.23"
+ctrlc = "3"
 
 [build-dependencies]
 slint-build = "1.8"

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Leanback-compatible theme required for the LEANBACK_LAUNCHER intent filter.
+        The Compose TV content overrides the visual style at runtime, but the
+        manifest still needs a Leanback theme to pass the Play Store TV review.
+    -->
+    <style name="Theme.FoundryIptv" parent="@style/Theme.AppCompat.Leanback">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:colorPrimary">#1A6EB5</item>
+        <item name="android:colorAccent">#1A6EB5</item>
+        <!-- Disable the default window title bar — Compose draws the full UI -->
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>
