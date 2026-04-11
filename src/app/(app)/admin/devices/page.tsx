@@ -1,6 +1,7 @@
 // src/app/(app)/admin/devices/page.tsx
 // List device tokens, revoke tokens, generate pairing codes.
 
+import Link from 'next/link';
 import { requireAdmin } from '@/lib/auth/session';
 import { query } from '@/lib/db/client';
 import { revalidatePath } from 'next/cache';
@@ -92,7 +93,16 @@ export default async function AdminDevicesPage({
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold">Devices</h1>
+      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap">
+        <h1 className="text-2xl font-bold">Devices</h1>
+        <Link
+          href="/admin/devices/setup/firestick"
+          className="rounded-lg px-5 py-2.5 text-sm font-semibold"
+          style={{ backgroundColor: 'var(--accent)', color: '#fff', textDecoration: 'none' }}
+        >
+          + Add a FireStick
+        </Link>
+      </div>
 
       {/* Show newly generated code prominently */}
       {newCode && (
