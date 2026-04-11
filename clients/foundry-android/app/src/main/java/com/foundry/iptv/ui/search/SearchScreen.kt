@@ -55,8 +55,6 @@ import com.foundry.iptv.core.EpgEntry
 import com.foundry.iptv.core.SearchResult
 import com.foundry.iptv.core.VodItem
 import com.foundry.iptv.player.PlayerHost
-import com.foundry.iptv.ui.focus.firstFocus
-import com.foundry.iptv.ui.focus.rememberFirstFocus
 import com.foundry.iptv.ui.image.ChannelLogo
 import com.foundry.iptv.ui.theme.FoundryColors
 import kotlinx.coroutines.Dispatchers
@@ -161,8 +159,6 @@ fun SearchScreen(modifier: Modifier = Modifier) {
         return
     }
 
-    val searchFieldFocus = rememberFirstFocus()
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -189,9 +185,7 @@ fun SearchScreen(modifier: Modifier = Modifier) {
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { /* debounce handles it */ }),
-            modifier = Modifier
-                .fillMaxWidth(0.6f)
-                .firstFocus(searchFieldFocus),
+            modifier = Modifier.fillMaxWidth(0.6f),
         )
 
         Spacer(Modifier.height(12.dp))
