@@ -218,10 +218,13 @@ fun MultiviewScreen(modifier: Modifier = Modifier) {
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // Matches web top-bar title `<h1 className="text-lg font-semibold">`
+                    // `src/components/multiview/MultiviewGrid.tsx:244`.
                     Text(
                         text = "Multiview",
                         color = FoundryColors.OnBackground,
-                        fontSize = 28.sp,
+                        fontSize = 18.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                     )
                     Spacer(Modifier.width(24.dp))
                     allLayouts.forEachIndexed { i, preset ->
@@ -241,9 +244,10 @@ fun MultiviewScreen(modifier: Modifier = Modifier) {
                     if (liteDevice) {
                         Spacer(Modifier.width(16.dp))
                         Text(
-                            text = "(Lite device — 3x3 / 2+4 disabled)",
+                            text = "Lite device — 3x3 / 2+4 disabled",
                             color = FoundryColors.OnSurfaceVariant,
                             fontSize = 12.sp,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                         )
                     }
                 }
@@ -545,14 +549,19 @@ private fun MultiviewTileView(
         if (focused) pool.attachFocused(channelId, pv) else pool.attachMuted(channelId, pv)
     }
 
+    // Matches web `WarmMultiviewTile`
+    // (`src/components/multiview/MultiviewGrid.tsx:102-111`):
+    //   outline: isFocused ? '2px solid var(--accent)' : 'none'; outlineOffset: -2px
+    // Idle tiles have NO border in the web — the gap-[2px] plus
+    // var(--border) background on the parent grid supplies the gridlines.
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(0.dp))
             .background(Color.Black)
             .border(
-                width = if (focused) 3.dp else 1.dp,
-                color = if (focused) FoundryColors.Orange else Color(0x33FFFFFF),
-                shape = RoundedCornerShape(8.dp),
+                width = if (focused) 2.dp else 0.dp,
+                color = if (focused) FoundryColors.Orange else Color.Transparent,
+                shape = RoundedCornerShape(0.dp),
             )
             .focusRequester(focusRequester)
             .focusable()
@@ -595,17 +604,23 @@ private fun MultiviewTileView(
                     }
                 },
             )
+            // Matches web CellControls label
+            // (`src/components/multiview/CellControls.tsx:40-49`):
+            //   absolute left-2 top-2 rounded px-2 py-1 text-xs font-medium
+            //   bg rgba(0,0,0,0.6) color var(--fg)
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomStart)
+                    .align(Alignment.TopStart)
                     .padding(8.dp)
-                    .background(Color(0xCC000000), RoundedCornerShape(4.dp))
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0x99000000))
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             ) {
                 Text(
                     text = tile.channel.name,
                     color = FoundryColors.OnSurface,
                     fontSize = 12.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                 )
             }
         } else {
@@ -624,6 +639,12 @@ private fun MultiviewTileView(
     }
 }
 
+/**
+ * 1:1 port of the web `LayoutPicker` button
+ * (`src/components/multiview/LayoutPicker.tsx:66-92`):
+ *   48x48 rounded-lg, active bg rgba(255,149,72,0.15), active fg var(--accent),
+ *   idle fg var(--fg-muted). Focus adds a 2dp accent border.
+ */
 @Composable
 private fun PresetChip(
     label: String,
@@ -633,21 +654,21 @@ private fun PresetChip(
 ) {
     var focused by remember { mutableStateOf(false) }
     val bg = when {
-        focused -> FoundryColors.Orange
-        selected -> FoundryColors.OrangeDim
-        else -> FoundryColors.SurfaceVariant
+        selected -> Color(0x26FF9548) // rgba(255, 149, 72, 0.15)
+        focused -> FoundryColors.SurfaceVariant
+        else -> Color.Transparent
     }
     Box(
         modifier = modifier
-            .height(40.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .height(48.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(bg)
             .border(
-                width = 2.dp,
-                color = if (focused) FoundryColors.OrangeBright else FoundryColors.Border,
-                shape = RoundedCornerShape(20.dp),
+                width = if (focused) 2.dp else 0.dp,
+                color = if (focused) FoundryColors.Orange else Color.Transparent,
+                shape = RoundedCornerShape(12.dp),
             )
-            .padding(horizontal = 18.dp)
+            .padding(horizontal = 16.dp)
             .focusable()
             .onFocusChanged { focused = it.isFocused }
             .onKeyEvent { ev ->
@@ -662,8 +683,9 @@ private fun PresetChip(
     ) {
         Text(
             text = label,
-            color = if (focused) FoundryColors.OnPrimary else FoundryColors.OnSurface,
-            fontSize = 15.sp,
+            color = if (selected) FoundryColors.Orange else FoundryColors.OnSurfaceVariant,
+            fontSize = 14.sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
         )
     }
 }
