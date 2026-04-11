@@ -109,9 +109,12 @@ fun DeckScreen(
     LaunchedEffect(deckId) {
         val loaded = withContext(Dispatchers.IO) {
             runCatching {
+                // `/api/decks/{id}` is not in middleware's APP_PREFIXES so the
+                // Rust Bearer-token path fails with 401 — use DeckApiShim to
+                // set `x-device-bearer` directly. `/api/stream` IS in
+                // APP_PREFIXES, so startStream still goes through the Rust FFI.
+                val d = DeckApiShim.getDeck(context, deckId)
                 val client = ApiClientHolder.get(context)
-                val d = client.getDeck(deckId)
-                // Eagerly start streams + warm the pool for each entry.
                 val warms = d.entries.map { entry ->
                     val session = client.startStream(entry.channelId)
                     entry.channelId to session.hlsUrl
