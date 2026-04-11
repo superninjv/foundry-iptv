@@ -1,24 +1,23 @@
 package com.foundry.iptv.ui.live
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,10 +30,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -46,11 +44,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
-import com.foundry.iptv.core.Category
 import com.foundry.iptv.core.Channel
 import com.foundry.iptv.core.MediaType
 import com.foundry.iptv.player.PlayerHost
 import com.foundry.iptv.ui.common.ApiClientHolder
+import com.foundry.iptv.ui.common.EmptyLibraryState
+import com.foundry.iptv.ui.common.LibraryStore
 import com.foundry.iptv.ui.common.WatchTracker
 import com.foundry.iptv.ui.image.ChannelLogo
 import com.foundry.iptv.ui.theme.FoundryColors
@@ -59,14 +58,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Live TV section of the Foundry hub.
+ * Live TV *library* — only channels the user has watched before.
  *
- * Top row: horizontal category chips (focus-selectable).
- * Main area: LazyVerticalGrid of ChannelCard tiles for the active category.
- *
- * Pressing OK (via Compose focus + keyboard handler) on a card calls
- * ApiClient.startStream(channelId) off the main thread and, on success,
- * pushes a fullscreen PlayerHost overlay. Back returns to the grid.
+ * Per Jack's mandate ("the only way we find things is through search"),
+ * there is no catalog browse, no category rail, and no 52k-channel scan on
+ * this screen. Discovery lives entirely in the Search tab; this tab is a
+ * small grid of already-known favorites backed by server-side
+ * `iptv_watch_history`.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -74,8 +72,6 @@ fun LiveScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var categories by remember { mutableStateOf<List<Category>>(emptyList()) }
-    var selectedCategoryId by rememberSaveable { mutableStateOf<String?>(null) }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var errorText by remember { mutableStateOf<String?>(null) }
@@ -86,38 +82,18 @@ fun LiveScreen(modifier: Modifier = Modifier) {
     var playingHlsUrl by rememberSaveable { mutableStateOf<String?>(null) }
     var playingSid by rememberSaveable { mutableStateOf<String?>(null) }
 
-    // Load categories once on mount.
     LaunchedEffect(Unit) {
-        val result = withContext(Dispatchers.IO) {
-            runCatching {
-                ApiClientHolder.get(context).listCategories()
+        runCatching { LibraryStore.getLive(context) }
+            .onSuccess {
+                channels = it
+                loading = false
             }
-        }
-        result.onSuccess { cats ->
-            categories = cats
-            if (selectedCategoryId == null && cats.isNotEmpty()) {
-                selectedCategoryId = cats.first().id
+            .onFailure {
+                errorText = it.message ?: "Failed to load library"
+                loading = false
             }
-            loading = false
-        }.onFailure {
-            errorText = it.message ?: "Failed to load categories"
-            loading = false
-        }
     }
 
-    // Reload channel list whenever the selected category changes.
-    LaunchedEffect(selectedCategoryId) {
-        val cat = selectedCategoryId ?: return@LaunchedEffect
-        val result = withContext(Dispatchers.IO) {
-            runCatching {
-                ApiClientHolder.get(context).listChannelsByCategory(cat)
-            }
-        }
-        result.onSuccess { channels = it }
-            .onFailure { errorText = it.message ?: "Failed to load channels" }
-    }
-
-    // Playback overlay takes precedence over the grid UI.
     if (playingHlsUrl != null && playingChannel != null) {
         PlayerHost(
             hlsUrl = playingHlsUrl!!,
@@ -139,7 +115,11 @@ fun LiveScreen(modifier: Modifier = Modifier) {
         return
     }
 
-    Box(modifier = modifier.background(FoundryColors.Background)) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(FoundryColors.Background),
+    ) {
         when {
             loading -> Text(
                 text = "Loading…",
@@ -157,155 +137,79 @@ fun LiveScreen(modifier: Modifier = Modifier) {
                     .padding(32.dp),
             )
 
-            else -> Column(modifier = Modifier.fillMaxSize()) {
-                CategoryChipRow(
-                    categories = categories,
-                    selectedId = selectedCategoryId,
-                    onSelect = { selectedCategoryId = it },
-                )
-                Spacer(Modifier.height(12.dp))
-                ChannelGrid(
-                    channels = channels,
-                    onPlay = { channel ->
-                        WatchTracker.recordWatch(scope, context, MediaType.LIVE, channel.id, channel.name)
-                        scope.launch {
-                            val result = withContext(Dispatchers.IO) {
-                                runCatching {
-                                    ApiClientHolder.get(context).startStream(channel.id)
+            channels.isEmpty() -> EmptyLibraryState()
+
+            else -> LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 260.dp),
+                contentPadding = PaddingValues(24.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                items(channels, key = { it.id }) { channel ->
+                    LibraryChannelCard(
+                        channel = channel,
+                        onPlay = {
+                            WatchTracker.recordWatch(
+                                scope, context, MediaType.LIVE, channel.id, channel.name,
+                            )
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    runCatching {
+                                        ApiClientHolder.get(context).startStream(channel.id)
+                                    }
+                                }
+                                result.onSuccess { session ->
+                                    playingChannel = channel.id
+                                    playingName = channel.name
+                                    playingHlsUrl = session.hlsUrl
+                                    playingSid = session.sid
+                                }.onFailure {
+                                    errorText = it.message ?: "Stream start failed"
                                 }
                             }
-                            result.onSuccess { session ->
-                                playingChannel = channel.id
-                                playingName = channel.name
-                                playingHlsUrl = session.hlsUrl
-                                playingSid = session.sid
-                            }.onFailure {
-                                errorText = it.message ?: "Stream start failed"
-                            }
-                        }
-                    },
-                )
+                        },
+                    )
+                }
             }
         }
     }
 }
 
+/**
+ * Horizontal 72dp channel card — logo + name + optional subtitle.
+ *
+ * Focus: scale animates to 1.05, background lifts to SurfaceBright, and
+ * a 3dp Orange border appears.
+ */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun CategoryChipRow(
-    categories: List<Category>,
-    selectedId: String?,
-    onSelect: (String) -> Unit,
-) {
-    val listState = rememberLazyListState()
-    LazyRow(
-        state = listState,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp),
-    ) {
-        items(categories, key = { it.id }) { cat ->
-            val count = cat.channelCount.toInt()
-            val label = if (count > 0) "${cat.name} ($count)" else cat.name
-            CategoryChip(
-                label = label,
-                selected = cat.id == selectedId,
-                onSelect = { onSelect(cat.id) },
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-private fun CategoryChip(
-    label: String,
-    selected: Boolean,
-    onSelect: () -> Unit,
-) {
-    var focused by remember { mutableStateOf(false) }
-    val bg = when {
-        focused -> FoundryColors.Orange
-        selected -> FoundryColors.SurfaceBright
-        else -> FoundryColors.Surface
-    }
-    val border = if (focused) FoundryColors.Orange else FoundryColors.Border
-    val fg = if (focused) FoundryColors.OnPrimary else FoundryColors.OnSurface
-
-    Box(
-        modifier = Modifier
-            .height(48.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .background(bg)
-            .border(2.dp, border, RoundedCornerShape(24.dp))
-            .padding(horizontal = 20.dp)
-            .onFocusChanged { state ->
-                focused = state.isFocused
-                if (state.isFocused) onSelect()
-            }
-            .focusable(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            color = fg,
-            fontSize = 16.sp,
-            fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Normal,
-        )
-    }
-}
-
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-private fun ChannelGrid(
-    channels: List<Channel>,
-    onPlay: (Channel) -> Unit,
-) {
-    if (channels.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                text = "No channels in this category",
-                color = FoundryColors.OnSurfaceVariant,
-                fontSize = 18.sp,
-            )
-        }
-        return
-    }
-    // Fixed 4-column grid — cards are ~200dp wide so this works on 1080p.
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(4),
-        contentPadding = PaddingValues(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        items(channels, key = { it.id }) { channel ->
-            ChannelCard(channel = channel, onPlay = { onPlay(channel) })
-        }
-    }
-}
-
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-private fun ChannelCard(
+internal fun LibraryChannelCard(
     channel: Channel,
+    subtitle: String? = null,
     onPlay: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.05f else 1f,
+        label = "channelCardScale",
+    )
     val borderColor = if (focused) FoundryColors.Orange else FoundryColors.Border
+    val borderWidth = if (focused) 3.dp else 1.dp
     val bgColor = if (focused) FoundryColors.SurfaceBright else FoundryColors.Surface
 
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .height(150.dp)
+            .height(72.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(RoundedCornerShape(12.dp))
             .background(bgColor)
-            .border(2.dp, borderColor, RoundedCornerShape(12.dp))
-            .padding(8.dp)
+            .border(borderWidth, borderColor, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
             .onKeyEvent { ev ->
                 if (ev.type == KeyEventType.KeyDown &&
                     (ev.key == Key.Enter || ev.key == Key.DirectionCenter ||
@@ -316,26 +220,33 @@ private fun ChannelCard(
                 } else {
                     false
                 }
-            }
-            .onFocusChanged { focused = it.isFocused }
-            .focusable(),
+            },
     ) {
         Box(
-            modifier = Modifier
-                .size(80.dp)
-                .padding(top = 4.dp),
+            modifier = Modifier.size(48.dp),
             contentAlignment = Alignment.Center,
         ) {
-            ChannelLogo(channel = channel, sizeDp = 80.dp)
+            ChannelLogo(channel = channel, sizeDp = 48.dp)
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = channel.name,
-            color = FoundryColors.OnSurface,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 2,
-        )
+        Spacer(Modifier.width(12.dp))
+        androidx.compose.foundation.layout.Column(
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                text = channel.name,
+                color = FoundryColors.OnSurface,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    color = FoundryColors.OnSurfaceVariant,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
-
