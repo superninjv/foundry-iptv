@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,7 +44,10 @@ import androidx.tv.material3.Text
 import com.foundry.iptv.core.Channel
 import com.foundry.iptv.core.Deck
 import com.foundry.iptv.core.DeckEntry
+import com.foundry.iptv.core.MediaType
 import com.foundry.iptv.player.WarmPlayerPool
+import com.foundry.iptv.ui.common.ApiClientHolder
+import com.foundry.iptv.ui.common.WatchTracker
 import com.foundry.iptv.ui.focus.KeyboardHandler
 import com.foundry.iptv.ui.image.ChannelLogo
 import com.foundry.iptv.ui.theme.FoundryColors
@@ -77,6 +81,7 @@ fun DeckScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     // Pool survives focus changes but is torn down on screen dispose.
     val pool = remember {
@@ -87,7 +92,6 @@ fun DeckScreen(
     }
 
     var deck by remember(deckId) { mutableStateOf<Deck?>(null) }
-    var channels by remember(deckId) { mutableStateOf<Map<String, Channel>>(emptyMap()) }
     var error by remember(deckId) { mutableStateOf<String?>(null) }
     var focusedIndex by remember(deckId) { mutableStateOf(0) }
     // Shared PlayerView for the full-screen hero video. We keep a reference
@@ -98,24 +102,25 @@ fun DeckScreen(
     // LaunchedEffect(focusedIndex, ...) can then perform the initial attach.
     var warmReady by remember(deckId) { mutableStateOf(false) }
 
-    // --- load the deck, list channels, prewarm the pool -----------------
+    // --- load the deck and prewarm the pool ------------------------------
+    // W5-A: DeckEntry now carries `channel: Channel?` directly from the
+    // server, so we no longer need to run a separate `listChannels()` join
+    // to render thumbnails — each entry already knows its own name/logo.
     LaunchedEffect(deckId) {
         val loaded = withContext(Dispatchers.IO) {
             runCatching {
-                val client = buildDecksApiClient(context)
+                val client = ApiClientHolder.get(context)
                 val d = client.getDeck(deckId)
-                val chs = client.listChannels().associateBy { it.id }
                 // Eagerly start streams + warm the pool for each entry.
                 val warms = d.entries.map { entry ->
                     val session = client.startStream(entry.channelId)
                     entry.channelId to session.hlsUrl
                 }
-                Triple(d, chs, warms)
+                d to warms
             }
         }
-        loaded.onSuccess { (d, chs, warms) ->
+        loaded.onSuccess { (d, warms) ->
             deck = d
-            channels = chs
             // prepare() must run on the main thread (ExoPlayer).
             for ((channelId, hlsUrl) in warms) {
                 pool.prepare(channelId, hlsUrl)
@@ -133,6 +138,13 @@ fun DeckScreen(
         val view = playerViewRef ?: return@LaunchedEffect
         val entry = d.entries.getOrNull(focusedIndex) ?: return@LaunchedEffect
         pool.attachFocused(entry.channelId, view)
+        // Track whatever the user is actively watching as they step through
+        // the deck — fire-and-forget via the shared WatchTracker.
+        WatchTracker.recordWatch(
+            scope, context, MediaType.LIVE,
+            entry.channelId,
+            entry.channel?.name ?: entry.channelId,
+        )
     }
 
     KeyboardHandler(onBack = onBack) {
@@ -192,7 +204,6 @@ fun DeckScreen(
                         // Thumbnail row (30% of height).
                         DeckThumbRow(
                             deck = d,
-                            channels = channels,
                             focusedIndex = focusedIndex,
                             onFocusChange = { newIndex ->
                                 if (newIndex != focusedIndex &&
@@ -224,7 +235,6 @@ fun DeckScreen(
 @Composable
 private fun DeckThumbRow(
     deck: Deck,
-    channels: Map<String, Channel>,
     focusedIndex: Int,
     onFocusChange: (Int) -> Unit,
     onBack: () -> Unit,
@@ -267,7 +277,7 @@ private fun DeckThumbRow(
         deck.entries.forEachIndexed { index, entry ->
             DeckEntryTile(
                 entry = entry,
-                channel = channels[entry.channelId],
+                channel = entry.channel,
                 focused = index == focusedIndex,
             )
         }

@@ -1,6 +1,5 @@
 package com.foundry.iptv.ui.guide
 
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -44,10 +43,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
-import com.foundry.iptv.core.ApiClient
 import com.foundry.iptv.core.Channel
 import com.foundry.iptv.core.EpgEntry
+import com.foundry.iptv.core.MediaType
 import com.foundry.iptv.player.PlayerHost
+import com.foundry.iptv.ui.common.ApiClientHolder
+import com.foundry.iptv.ui.common.WatchTracker
 import com.foundry.iptv.ui.theme.FoundryColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -80,6 +81,7 @@ fun GuideScreen(modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
 
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
+    var epgByChannel by remember { mutableStateOf<Map<String, List<EpgEntry>>>(emptyMap()) }
     var loading by remember { mutableStateOf(true) }
     var errorText by remember { mutableStateOf<String?>(null) }
 
@@ -100,19 +102,25 @@ fun GuideScreen(modifier: Modifier = Modifier) {
     // Shared horizontal scroll state for the ruler + every channel row.
     val sharedRowState = rememberLazyListState()
 
+    // Single cold-start fetch: one listChannels() + one batched EPG round-trip
+    // for up to 200 channels. Replaces the old per-row `getEpg()` fan-out that
+    // used to fire ~200 sequential Rust calls on every Guide mount.
     LaunchedEffect(Unit) {
         val result = withContext(Dispatchers.IO) {
             runCatching {
-                val client = buildGuideApiClient(context)
-                    ?: error("Missing credentials")
-                client.listChannels().take(200)
+                val client = ApiClientHolder.get(context)
+                val chans = client.listChannels().take(200)
+                val batch = client.getEpgBatch(chans.map { it.id }, 24u)
+                val byId = batch.associate { it.channelId to it.programs }
+                chans to byId
             }
         }
-        result.onSuccess {
-            channels = it
+        result.onSuccess { (chans, byId) ->
+            channels = chans
+            epgByChannel = byId
             loading = false
         }.onFailure {
-            errorText = it.message ?: "Failed to load channels"
+            errorText = it.message ?: "Failed to load guide"
             loading = false
         }
     }
@@ -126,7 +134,7 @@ fun GuideScreen(modifier: Modifier = Modifier) {
                 val sid = playingSid
                 if (id != null && sid != null) {
                     scope.launch(Dispatchers.IO) {
-                        runCatching { buildGuideApiClient(context)?.stopStream(id, sid) }
+                        runCatching { ApiClientHolder.getOrNull(context)?.stopStream(id, sid) }
                     }
                 }
                 playingChannel = null
@@ -164,15 +172,15 @@ fun GuideScreen(modifier: Modifier = Modifier) {
                     items(channels, key = { it.id }) { channel ->
                         ChannelEpgRow(
                             channel = channel,
+                            programs = epgByChannel[channel.id].orEmpty(),
                             slots = slots,
                             sharedState = sharedRowState,
                             onStartPlayback = { program ->
+                                WatchTracker.recordWatch(scope, context, MediaType.LIVE, channel.id, channel.name)
                                 scope.launch {
                                     val result = withContext(Dispatchers.IO) {
                                         runCatching {
-                                            val client = buildGuideApiClient(context)
-                                                ?: error("Missing credentials")
-                                            client.startStream(channel.id)
+                                            ApiClientHolder.get(context).startStream(channel.id)
                                         }
                                     }
                                     result.onSuccess { session ->
@@ -254,24 +262,11 @@ private fun TimeRuler(
 @Composable
 private fun ChannelEpgRow(
     channel: Channel,
+    programs: List<EpgEntry>,
     slots: List<ZonedDateTime>,
     sharedState: androidx.compose.foundation.lazy.LazyListState,
     onStartPlayback: (EpgEntry?) -> Unit,
 ) {
-    val context = LocalContext.current
-    var programs by remember(channel.id) { mutableStateOf<List<EpgEntry>>(emptyList()) }
-
-    // Lazy EPG fetch — fires once per row mount.
-    LaunchedEffect(channel.id) {
-        val result = withContext(Dispatchers.IO) {
-            runCatching {
-                val client = buildGuideApiClient(context) ?: return@runCatching emptyList()
-                client.getEpg(channel.id, 24u)
-            }
-        }
-        programs = result.getOrNull() ?: emptyList()
-    }
-
     // This row drives the shared scroll state when focused. We deliberately
     // use the same state object for every row so horizontal scroll stays in
     // sync across rows + ruler (Compose LazyListState only has one owner at a
@@ -393,12 +388,4 @@ private fun parseInstant(s: String): Instant? {
     }
 }
 
-// ---- ApiClient wiring (kept private to this package to respect file-ownership
-// boundaries; W4-A can later consolidate with ui/live/ApiClientFactory.kt).
-
-internal fun buildGuideApiClient(context: Context): ApiClient? {
-    val prefs = context.getSharedPreferences("foundry_prefs", Context.MODE_PRIVATE)
-    val url = prefs.getString("server_url", null) ?: return null
-    val token = prefs.getString("device_token", null) ?: return null
-    return ApiClient(url).also { it.setToken(token) }
-}
+// ApiClient wiring moved to ui/common/ApiClientHolder.kt (W5-B).

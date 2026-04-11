@@ -35,8 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
-import com.foundry.iptv.core.ApiClient
 import com.foundry.iptv.core.VodItem
+import com.foundry.iptv.ui.common.ApiClientHolder
 import com.foundry.iptv.ui.theme.FoundryColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -62,17 +62,8 @@ fun VodScreen(modifier: Modifier = Modifier) {
     // from the `categoryId` field — cheap because the list is a few thousand
     // rows max and the FFI returns typed data, not raw JSON.
     LaunchedEffect(Unit) {
-        val creds = readCredentials(context)
-        if (creds == null) {
-            errorText = "No credentials — please re-pair."
-            loading = false
-            return@LaunchedEffect
-        }
         val result = withContext(Dispatchers.IO) {
-            runCatching {
-                val client = ApiClient(creds.serverUrl).also { it.setToken(creds.token) }
-                client.listVod(null)
-            }
+            runCatching { ApiClientHolder.get(context).listVod(null) }
         }
         result.onSuccess {
             allItems = it

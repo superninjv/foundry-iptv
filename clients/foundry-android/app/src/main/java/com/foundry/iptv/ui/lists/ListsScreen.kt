@@ -1,6 +1,5 @@
 package com.foundry.iptv.ui.lists
 
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,10 +36,12 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import com.foundry.iptv.core.ApiClient
 import com.foundry.iptv.core.Channel
+import com.foundry.iptv.core.MediaType
 import com.foundry.iptv.core.UserList
 import com.foundry.iptv.player.PlayerHost
+import com.foundry.iptv.ui.common.ApiClientHolder
+import com.foundry.iptv.ui.common.WatchTracker
 import com.foundry.iptv.ui.focus.KeyboardHandler
 import com.foundry.iptv.ui.focus.firstFocus
 import com.foundry.iptv.ui.focus.rememberFirstFocus
@@ -79,7 +80,7 @@ fun ListsScreen(
 
     LaunchedEffect(Unit) {
         val result = withContext(Dispatchers.IO) {
-            runCatching { buildApiClient(context).listLists() }
+            runCatching { ApiClientHolder.get(context).listLists() }
         }
         result.onSuccess {
             lists = it
@@ -224,7 +225,7 @@ internal fun ListDetailScreen(
 
     LaunchedEffect(list.id) {
         val result = withContext(Dispatchers.IO) {
-            runCatching { buildApiClient(context).listListChannels(list.id) }
+            runCatching { ApiClientHolder.get(context).listListChannels(list.id) }
         }
         result.onSuccess {
             channels = it
@@ -274,10 +275,11 @@ internal fun ListDetailScreen(
                             ListChannelRow(
                                 channel = channel,
                                 onSelect = {
+                                    WatchTracker.recordWatch(scope, context, MediaType.LIVE, channel.id, channel.name)
                                     scope.launch {
                                         val result = withContext(Dispatchers.IO) {
                                             runCatching {
-                                                buildApiClient(context).startStream(channel.id)
+                                                ApiClientHolder.get(context).startStream(channel.id)
                                             }
                                         }
                                         result.onSuccess { session ->
@@ -342,14 +344,4 @@ private fun ListChannelRow(
 
 internal data class PlayingChannel(val channel: Channel, val hlsUrl: String)
 
-/**
- * Inline ApiClient factory for this feature package — reads pairing prefs and
- * applies the stored token. W4-A may swap this for a shared builder later.
- */
-internal fun buildApiClient(ctx: Context): ApiClient {
-    val prefs = ctx.getSharedPreferences("foundry_prefs", Context.MODE_PRIVATE)
-    val baseUrl = prefs.getString("server_url", null)
-        ?: error("No server_url in foundry_prefs — device not paired")
-    val token = prefs.getString("device_token", null).orEmpty()
-    return ApiClient(baseUrl).also { it.setToken(token) }
-}
+// ApiClient wiring moved to ui/common/ApiClientHolder.kt (W5-B).
