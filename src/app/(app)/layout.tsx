@@ -232,6 +232,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 data-nav-item
                 tabIndex={0}
+                prefetch={false}
                 className="foundry-nav-item flex items-center justify-center rounded-lg py-3"
                 style={{
                   color: active ? 'var(--accent)' : 'var(--fg-muted)',
@@ -271,6 +272,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               className="flex flex-1 flex-col items-center gap-1 py-3"
               style={{
                 color: active ? 'var(--accent)' : 'var(--fg-muted)',
