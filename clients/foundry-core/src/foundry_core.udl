@@ -178,6 +178,19 @@ interface ApiClient {
     [Throws=ApiError]
     sequence<VodItem> list_vod(string? category);
 
+    // -----------------------------------------------------------------------
+    // Library (watched-only) — 5 s client-side cache TTL.
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    sequence<Channel> list_library_live();
+
+    [Throws=ApiError]
+    sequence<VodItem> list_library_vod();
+
+    [Throws=ApiError]
+    sequence<SeriesItem> list_library_series();
+
     [Throws=ApiError]
     string get_vod_detail(string id);
 

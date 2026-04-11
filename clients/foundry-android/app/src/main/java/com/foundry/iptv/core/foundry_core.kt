@@ -776,6 +776,12 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -830,6 +836,12 @@ internal interface UniffiLib : Library {
     fun uniffi_foundry_core_fn_method_apiclient_list_decks(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_foundry_core_fn_method_apiclient_list_favorites(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_foundry_core_fn_method_apiclient_list_library_live(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_foundry_core_fn_method_apiclient_list_library_series(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_foundry_core_fn_method_apiclient_list_library_vod(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_foundry_core_fn_method_apiclient_list_list_channels(`ptr`: Pointer,`listId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1005,6 +1017,12 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_list_favorites(
     ): Short
+    fun uniffi_foundry_core_checksum_method_apiclient_list_library_live(
+    ): Short
+    fun uniffi_foundry_core_checksum_method_apiclient_list_library_series(
+    ): Short
+    fun uniffi_foundry_core_checksum_method_apiclient_list_library_vod(
+    ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_list_list_channels(
     ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_list_lists(
@@ -1098,6 +1116,15 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_foundry_core_checksum_method_apiclient_list_favorites() != 13324.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_foundry_core_checksum_method_apiclient_list_library_live() != 28817.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_foundry_core_checksum_method_apiclient_list_library_series() != 5558.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_foundry_core_checksum_method_apiclient_list_library_vod() != 44174.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_foundry_core_checksum_method_apiclient_list_list_channels() != 51137.toShort()) {
@@ -1535,6 +1562,12 @@ public interface ApiClientInterface {
     
     fun `listFavorites`(): List<kotlin.String>
     
+    fun `listLibraryLive`(): List<Channel>
+    
+    fun `listLibrarySeries`(): List<SeriesItem>
+    
+    fun `listLibraryVod`(): List<VodItem>
+    
     fun `listListChannels`(`listId`: kotlin.String): List<Channel>
     
     fun `listLists`(): List<UserList>
@@ -1848,6 +1881,45 @@ open class ApiClient: Disposable, AutoCloseable, ApiClientInterface {
     callWithPointer {
     uniffiRustCallWithError(ApiException) { _status ->
     UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_list_favorites(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(ApiException::class)override fun `listLibraryLive`(): List<Channel> {
+            return FfiConverterSequenceTypeChannel.lift(
+    callWithPointer {
+    uniffiRustCallWithError(ApiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_list_library_live(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(ApiException::class)override fun `listLibrarySeries`(): List<SeriesItem> {
+            return FfiConverterSequenceTypeSeriesItem.lift(
+    callWithPointer {
+    uniffiRustCallWithError(ApiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_list_library_series(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(ApiException::class)override fun `listLibraryVod`(): List<VodItem> {
+            return FfiConverterSequenceTypeVodItem.lift(
+    callWithPointer {
+    uniffiRustCallWithError(ApiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_list_library_vod(
         it, _status)
 }
     }
