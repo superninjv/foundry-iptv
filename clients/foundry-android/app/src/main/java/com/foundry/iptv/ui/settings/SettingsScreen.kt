@@ -153,14 +153,8 @@ fun SettingsScreen(
                 onConfirm = {
                     showConfirm = false
                     scope.launch {
-                        withContext(Dispatchers.IO) {
-                            runCatching {
-                                // Best-effort: clear the in-memory token on the
-                                // Rust client before we wipe local prefs.
-                                ApiClientHolder.get(context).setToken("")
-                            }
-                        }
                         clearPairingPrefs(context)
+                        ApiClientHolder.invalidate()
                         onUnpair()
                     }
                 },

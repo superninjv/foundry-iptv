@@ -30,6 +30,7 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.foundry.iptv.core.Deck
+import com.foundry.iptv.ui.common.ApiClientHolder
 import com.foundry.iptv.ui.focus.KeyboardHandler
 import com.foundry.iptv.ui.focus.firstFocus
 import com.foundry.iptv.ui.focus.rememberFirstFocus
@@ -59,10 +60,7 @@ fun DeckListScreen(
 
     LaunchedEffect(Unit) {
         val result = withContext(Dispatchers.IO) {
-            // `/api/decks` is not in middleware's APP_PREFIXES, so the Rust
-            // client's Bearer request is rejected with 401. Route around
-            // the server bug with a local OkHttp call — see DeckApiShim.
-            runCatching { DeckApiShim.listDecks(context) }
+            runCatching { ApiClientHolder.get(context).listDecks() }
         }
         result.onSuccess {
             decks = it

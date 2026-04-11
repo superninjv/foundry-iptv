@@ -104,12 +104,7 @@ fun MultiviewScreen(modifier: Modifier = Modifier) {
         val result = withContext(Dispatchers.IO) {
             runCatching {
                 val client = ApiClientHolder.get(context)
-                // `/api/favorites` is not in middleware's APP_PREFIXES so the
-                // Rust Bearer-token path fails with 401 — use the shim to set
-                // `x-device-bearer` directly. `/api/channels` and
-                // `/api/stream` ARE in APP_PREFIXES, so listChannels/startStream
-                // still go through the Rust FFI.
-                val favIds = MultiviewApiShim.listFavorites(context)
+                val favIds = client.listFavorites()
                 val allChannels = client.listChannels()
                 val byId = allChannels.associateBy { it.id }
                 val picked = mutableListOf<Channel>()
