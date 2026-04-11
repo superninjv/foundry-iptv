@@ -215,6 +215,10 @@ struct FavoriteBody<'a> {
 /// `Cache-Control: private, max-age=30, stale-while-revalidate=300`.
 const CACHE_TTL: Duration = Duration::from_secs(30);
 
+/// Shorter TTL for the library (watched-only) endpoints. The library grows
+/// on every playback, so a 30 s window would make the UI feel stale.
+const LIBRARY_CACHE_TTL: Duration = Duration::from_secs(5);
+
 /// In-memory TTL cache for list-oriented endpoints. These are the
 /// expensive ones the FireStick Guide / Library screens hit on every
 /// navigation and they barely change between calls.
@@ -224,6 +228,10 @@ struct ApiCache {
     categories: RwLock<Option<(Instant, Vec<Category>)>>,
     vod: RwLock<Option<(Instant, Vec<VodItem>)>>,
     series: RwLock<Option<(Instant, Vec<SeriesItem>)>>,
+    // Library (watched-only) caches — 5 s TTL.
+    library_live: RwLock<Option<(Instant, Vec<Channel>)>>,
+    library_vod: RwLock<Option<(Instant, Vec<VodItem>)>>,
+    library_series: RwLock<Option<(Instant, Vec<SeriesItem>)>>,
 }
 
 fn cache_get<T: Clone>(slot: &RwLock<Option<(Instant, T)>>) -> Option<T> {
@@ -233,6 +241,25 @@ fn cache_get<T: Clone>(slot: &RwLock<Option<(Instant, T)>>) -> Option<T> {
         Some(value.clone())
     } else {
         None
+    }
+}
+
+fn cache_get_ttl<T: Clone>(
+    slot: &RwLock<Option<(Instant, T)>>,
+    ttl: Duration,
+) -> Option<T> {
+    let guard = slot.read().ok()?;
+    let (at, value) = guard.as_ref()?;
+    if at.elapsed() < ttl {
+        Some(value.clone())
+    } else {
+        None
+    }
+}
+
+fn cache_clear<T>(slot: &RwLock<Option<(Instant, T)>>) {
+    if let Ok(mut guard) = slot.write() {
+        *guard = None;
     }
 }
 
@@ -628,6 +655,57 @@ impl ApiClient {
     }
 
     // -----------------------------------------------------------------------
+    // Library (watched-only) — 5 s cache TTL. Invalidated on record_watch_history.
+    // -----------------------------------------------------------------------
+
+    /// `GET /api/library/live` — channels the user has actually watched.
+    /// Server side: DISTINCT watched channel ids JOIN-ed against the Threadfin
+    /// catalog with stale ids dropped. Response shape matches `/api/channels`.
+    pub async fn list_library_live(&self) -> Result<Vec<Channel>, ApiError> {
+        if let Some(cached) = cache_get_ttl(&self.cache.library_live, LIBRARY_CACHE_TTL) {
+            return Ok(cached);
+        }
+        let req = self.authed(self.http.get(self.url("/api/library/live")))?;
+        let resp = req.send().await?;
+        let resp = Self::check(resp).await?;
+        let body: ChannelsResponse = resp.json().await?;
+        cache_put(&self.cache.library_live, body.channels.clone());
+        Ok(body.channels)
+    }
+
+    /// `GET /api/library/vod` — movies the user has actually watched.
+    pub async fn list_library_vod(&self) -> Result<Vec<VodItem>, ApiError> {
+        if let Some(cached) = cache_get_ttl(&self.cache.library_vod, LIBRARY_CACHE_TTL) {
+            return Ok(cached);
+        }
+        let req = self.authed(self.http.get(self.url("/api/library/vod")))?;
+        let resp = req.send().await?;
+        let resp = Self::check(resp).await?;
+        #[derive(Deserialize)]
+        struct LibraryVodResponse {
+            vod: Vec<RawVodStream>,
+        }
+        let body: LibraryVodResponse = resp.json().await?;
+        let items: Vec<VodItem> = body.vod.into_iter().map(VodItem::from).collect();
+        cache_put(&self.cache.library_vod, items.clone());
+        Ok(items)
+    }
+
+    /// `GET /api/library/series` — series the user has actually watched.
+    pub async fn list_library_series(&self) -> Result<Vec<SeriesItem>, ApiError> {
+        if let Some(cached) = cache_get_ttl(&self.cache.library_series, LIBRARY_CACHE_TTL) {
+            return Ok(cached);
+        }
+        let req = self.authed(self.http.get(self.url("/api/library/series")))?;
+        let resp = req.send().await?;
+        let resp = Self::check(resp).await?;
+        let body: SeriesListResponse = resp.json().await?;
+        let items: Vec<SeriesItem> = body.series.into_iter().map(SeriesItem::from).collect();
+        cache_put(&self.cache.library_series, items.clone());
+        Ok(items)
+    }
+
+    // -----------------------------------------------------------------------
     // Lists / favorites
     // -----------------------------------------------------------------------
 
@@ -805,6 +883,11 @@ impl ApiClient {
             .json(&body);
         let resp = req.send().await?;
         Self::check(resp).await?;
+        // Every successful watch event expands the library, so drop all
+        // three library cache slots to force a refresh on next read.
+        cache_clear(&self.cache.library_live);
+        cache_clear(&self.cache.library_vod);
+        cache_clear(&self.cache.library_series);
         Ok(())
     }
 
