@@ -48,10 +48,12 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import com.foundry.iptv.core.ApiClient
 import com.foundry.iptv.core.Channel
+import com.foundry.iptv.core.MediaType
 import com.foundry.iptv.player.PlayerHost
 import com.foundry.iptv.player.WarmPlayerPool
+import com.foundry.iptv.ui.common.ApiClientHolder
+import com.foundry.iptv.ui.common.WatchTracker
 import com.foundry.iptv.ui.focus.KeyboardHandler
 import com.foundry.iptv.ui.theme.FoundryColors
 import kotlinx.coroutines.Dispatchers
@@ -101,7 +103,7 @@ fun MultiviewScreen(modifier: Modifier = Modifier) {
         val target = gridSize * gridSize
         val result = withContext(Dispatchers.IO) {
             runCatching {
-                val client = buildApiClient(context)
+                val client = ApiClientHolder.get(context)
                 val favIds = client.listFavorites()
                 val allChannels = client.listChannels()
                 val byId = allChannels.associateBy { it.id }
@@ -140,6 +142,11 @@ fun MultiviewScreen(modifier: Modifier = Modifier) {
 
     // Zoomed full-screen single view of the focused tile.
     zoomed?.let { tile ->
+        // The user explicitly picked this tile to focus on — log it as a
+        // LIVE watch in server-side history (fire-and-forget).
+        LaunchedEffect(tile.channel.id) {
+            WatchTracker.recordWatch(scope, context, MediaType.LIVE, tile.channel.id, tile.channel.name)
+        }
         KeyboardHandler(onBack = { zoomed = null }) {
             PlayerHost(
                 hlsUrl = tile.hlsUrl,
@@ -445,14 +452,4 @@ private fun isLowRamFireTv(context: Context): Boolean {
     return modelHit || lowMem
 }
 
-/**
- * Inline ApiClient factory — reads pairing prefs and applies the stored token.
- * Duplicated from other screens to keep this package self-contained.
- */
-private fun buildApiClient(ctx: Context): ApiClient {
-    val prefs = ctx.getSharedPreferences("foundry_prefs", Context.MODE_PRIVATE)
-    val baseUrl = prefs.getString("server_url", null)
-        ?: error("No server_url in foundry_prefs — device not paired")
-    val token = prefs.getString("device_token", null).orEmpty()
-    return ApiClient(baseUrl).also { it.setToken(token) }
-}
+// ApiClient wiring moved to ui/common/ApiClientHolder.kt (W5-B).

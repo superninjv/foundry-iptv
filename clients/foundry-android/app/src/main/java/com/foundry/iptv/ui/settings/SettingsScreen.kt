@@ -34,8 +34,8 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import com.foundry.iptv.core.ApiClient
 import com.foundry.iptv.core.UserSettings
+import com.foundry.iptv.ui.common.ApiClientHolder
 import com.foundry.iptv.ui.focus.KeyboardHandler
 import com.foundry.iptv.ui.focus.firstFocus
 import com.foundry.iptv.ui.focus.rememberFirstFocus
@@ -71,13 +71,6 @@ fun SettingsScreen(
     var loading by remember { mutableStateOf(true) }
     var showConfirm by remember { mutableStateOf(false) }
 
-    val tokenPreview = remember {
-        val stored = context
-            .getSharedPreferences("foundry_prefs", Context.MODE_PRIVATE)
-            .getString("device_token", null)
-            .orEmpty()
-        if (stored.length >= 8) stored.substring(0, 8) else stored
-    }
     val serverUrl = remember {
         context
             .getSharedPreferences("foundry_prefs", Context.MODE_PRIVATE)
@@ -88,7 +81,7 @@ fun SettingsScreen(
 
     LaunchedEffect(Unit) {
         val result = withContext(Dispatchers.IO) {
-            runCatching { buildApiClient(context).getSettings() }
+            runCatching { ApiClientHolder.get(context).getSettings() }
         }
         result.onSuccess {
             serverSettings = it
@@ -119,11 +112,18 @@ fun SettingsScreen(
             SectionCard(title = "Device") {
                 val label = serverSettings?.deviceLabel ?: "(unlabeled)"
                 val email = serverSettings?.email.orEmpty()
+                // Token ID + platform now come authoritatively from the server
+                // (see W5-A — UserSettings.tokenId is the first 8 hex chars of
+                // SHA-256(token); UserSettings.platform is the FFI-reported
+                // client kind, e.g. "android-fire-tv").
+                val tokenId = serverSettings?.tokenId.orEmpty()
+                val platform = serverSettings?.platform.orEmpty()
                 InfoRow("Label", label)
                 if (email.isNotEmpty()) InfoRow("Account", email)
-                InfoRow("Token", if (tokenPreview.isEmpty()) "—" else "$tokenPreview…")
+                InfoRow("Token", if (tokenId.isEmpty()) "—" else "$tokenId…")
                 if (serverUrl.isNotEmpty()) InfoRow("Server", serverUrl)
-                InfoRow("Platform", "Android ${Build.VERSION.RELEASE} · ${Build.MODEL}")
+                if (platform.isNotEmpty()) InfoRow("Platform", platform)
+                InfoRow("Device", "Android ${Build.VERSION.RELEASE} · ${Build.MODEL}")
                 when {
                     loading -> InfoRow("Status", "Refreshing…")
                     serverError != null -> InfoRow("Status", serverError!!)
@@ -157,7 +157,7 @@ fun SettingsScreen(
                             runCatching {
                                 // Best-effort: clear the in-memory token on the
                                 // Rust client before we wipe local prefs.
-                                buildApiClient(context).setToken("")
+                                ApiClientHolder.get(context).setToken("")
                             }
                         }
                         clearPairingPrefs(context)
@@ -340,13 +340,4 @@ private fun clearPairingPrefs(context: Context) {
         .apply()
 }
 
-/**
- * Inline ApiClient factory — reads pairing prefs and applies the stored token.
- */
-internal fun buildApiClient(ctx: Context): ApiClient {
-    val prefs = ctx.getSharedPreferences("foundry_prefs", Context.MODE_PRIVATE)
-    val baseUrl = prefs.getString("server_url", null)
-        ?: error("No server_url in foundry_prefs — device not paired")
-    val token = prefs.getString("device_token", null).orEmpty()
-    return ApiClient(baseUrl).also { it.setToken(token) }
-}
+// ApiClient wiring moved to ui/common/ApiClientHolder.kt (W5-B).

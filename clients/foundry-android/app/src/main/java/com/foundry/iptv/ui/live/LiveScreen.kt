@@ -48,7 +48,10 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import com.foundry.iptv.core.Category
 import com.foundry.iptv.core.Channel
+import com.foundry.iptv.core.MediaType
 import com.foundry.iptv.player.PlayerHost
+import com.foundry.iptv.ui.common.ApiClientHolder
+import com.foundry.iptv.ui.common.WatchTracker
 import com.foundry.iptv.ui.image.ChannelLogo
 import com.foundry.iptv.ui.theme.FoundryColors
 import kotlinx.coroutines.Dispatchers
@@ -87,9 +90,7 @@ fun LiveScreen(modifier: Modifier = Modifier) {
     LaunchedEffect(Unit) {
         val result = withContext(Dispatchers.IO) {
             runCatching {
-                val client = buildApiClient(context)
-                    ?: error("Missing credentials — re-pair required")
-                client.listCategories()
+                ApiClientHolder.get(context).listCategories()
             }
         }
         result.onSuccess { cats ->
@@ -109,9 +110,7 @@ fun LiveScreen(modifier: Modifier = Modifier) {
         val cat = selectedCategoryId ?: return@LaunchedEffect
         val result = withContext(Dispatchers.IO) {
             runCatching {
-                val client = buildApiClient(context)
-                    ?: error("Missing credentials")
-                client.listChannelsByCategory(cat)
+                ApiClientHolder.get(context).listChannelsByCategory(cat)
             }
         }
         result.onSuccess { channels = it }
@@ -128,7 +127,7 @@ fun LiveScreen(modifier: Modifier = Modifier) {
                 val sid = playingSid
                 if (id != null && sid != null) {
                     scope.launch(Dispatchers.IO) {
-                        runCatching { buildApiClient(context)?.stopStream(id, sid) }
+                        runCatching { ApiClientHolder.getOrNull(context)?.stopStream(id, sid) }
                     }
                 }
                 playingChannel = null
@@ -168,12 +167,11 @@ fun LiveScreen(modifier: Modifier = Modifier) {
                 ChannelGrid(
                     channels = channels,
                     onPlay = { channel ->
+                        WatchTracker.recordWatch(scope, context, MediaType.LIVE, channel.id, channel.name)
                         scope.launch {
                             val result = withContext(Dispatchers.IO) {
                                 runCatching {
-                                    val client = buildApiClient(context)
-                                        ?: error("Missing credentials")
-                                    client.startStream(channel.id)
+                                    ApiClientHolder.get(context).startStream(channel.id)
                                 }
                             }
                             result.onSuccess { session ->
@@ -209,8 +207,10 @@ private fun CategoryChipRow(
             .height(56.dp),
     ) {
         items(categories, key = { it.id }) { cat ->
+            val count = cat.channelCount.toInt()
+            val label = if (count > 0) "${cat.name} ($count)" else cat.name
             CategoryChip(
-                label = cat.name,
+                label = label,
                 selected = cat.id == selectedId,
                 onSelect = { onSelect(cat.id) },
             )

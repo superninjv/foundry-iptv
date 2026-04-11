@@ -24,6 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,9 +37,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
-import com.foundry.iptv.core.ApiClient
+import com.foundry.iptv.core.MediaType
+import com.foundry.iptv.player.PlayerHost
+import com.foundry.iptv.ui.common.ApiClientHolder
+import com.foundry.iptv.ui.common.WatchTracker
 import com.foundry.iptv.ui.theme.FoundryColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -137,22 +142,19 @@ fun SeriesDetailScreen(
     BackHandler(onBack = onBack)
 
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var detail by remember(seriesId) { mutableStateOf<SeriesDetail?>(null) }
     var loading by remember(seriesId) { mutableStateOf(true) }
     var errorText by remember(seriesId) { mutableStateOf<String?>(null) }
     var selectedSeason by remember(seriesId) { mutableStateOf<Int?>(null) }
 
+    var playingUrl by remember(seriesId) { mutableStateOf<String?>(null) }
+    var playingTitle by remember(seriesId) { mutableStateOf<String?>(null) }
+
     LaunchedEffect(seriesId) {
-        val creds = readCredentials(context)
-        if (creds == null) {
-            errorText = "No credentials — please re-pair."
-            loading = false
-            return@LaunchedEffect
-        }
         val result = withContext(Dispatchers.IO) {
             runCatching {
-                val client = ApiClient(creds.serverUrl).also { it.setToken(creds.token) }
-                val raw = client.getSeriesDetail(seriesId.toString())
+                val raw = ApiClientHolder.get(context).getSeriesDetail(seriesId.toString())
                 SeriesDetail.fromJson(raw)
             }
         }
@@ -164,6 +166,18 @@ fun SeriesDetailScreen(
             errorText = e.message ?: "Failed to load series details"
             loading = false
         }
+    }
+
+    if (playingUrl != null) {
+        PlayerHost(
+            hlsUrl = playingUrl!!,
+            channelName = playingTitle ?: "",
+            onBack = {
+                playingUrl = null
+                playingTitle = null
+            },
+        )
+        return
     }
 
     Box(
@@ -178,6 +192,28 @@ fun SeriesDetailScreen(
                 detail = detail!!,
                 selectedSeason = selectedSeason,
                 onSelectSeason = { selectedSeason = it },
+                onPlayEpisode = { ep ->
+                    // Track watch history against the SERIES, not the episode —
+                    // matches the web client behaviour per W5-A's brief.
+                    WatchTracker.recordWatch(
+                        scope, context, MediaType.SERIES,
+                        seriesId.toString(), detail?.title,
+                    )
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching {
+                                ApiClientHolder.get(context)
+                                    .startEpisodeStream(ep.id, ep.containerExtension)
+                            }
+                        }
+                        result.onSuccess { session ->
+                            playingUrl = session.url
+                            playingTitle = "${detail?.title ?: ""} — ${ep.title}"
+                        }.onFailure {
+                            errorText = it.message ?: "Episode playback failed"
+                        }
+                    }
+                },
             )
             else -> CenterMessage("Not found.", Color(0xFFAAAAAA))
         }
@@ -198,6 +234,7 @@ private fun SeriesDetailBody(
     detail: SeriesDetail,
     selectedSeason: Int?,
     onSelectSeason: (Int) -> Unit,
+    onPlayEpisode: (EpisodeDetail) -> Unit,
 ) {
     val scroll = rememberScrollState()
     Column(
@@ -313,7 +350,7 @@ private fun SeriesDetailBody(
             // at runtime. Episode counts per season are small (<30 typical).
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 active.episodes.forEach { ep ->
-                    EpisodeRow(ep)
+                    EpisodeRow(ep, onPlay = { onPlayEpisode(ep) })
                 }
             }
         }
@@ -355,7 +392,7 @@ private fun SeasonChip(
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun EpisodeRow(ep: EpisodeDetail) {
+private fun EpisodeRow(ep: EpisodeDetail, onPlay: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
@@ -364,12 +401,7 @@ private fun EpisodeRow(ep: EpisodeDetail) {
             .background(if (focused) FoundryColors.SurfaceBright else FoundryColors.Surface)
             .onFocusChanged { focused = it.isFocused }
             .focusable()
-            .clickable {
-                android.util.Log.i(
-                    "SeriesDetail",
-                    "Play requested for episodeId=${ep.id} ext=${ep.containerExtension}",
-                )
-            }
+            .clickable { onPlay() }
             .padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {

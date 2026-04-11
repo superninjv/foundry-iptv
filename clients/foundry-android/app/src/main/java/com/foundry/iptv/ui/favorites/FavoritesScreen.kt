@@ -1,6 +1,5 @@
 package com.foundry.iptv.ui.favorites
 
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,9 +33,11 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import com.foundry.iptv.core.ApiClient
 import com.foundry.iptv.core.Channel
+import com.foundry.iptv.core.MediaType
 import com.foundry.iptv.player.PlayerHost
+import com.foundry.iptv.ui.common.ApiClientHolder
+import com.foundry.iptv.ui.common.WatchTracker
 import com.foundry.iptv.ui.focus.KeyboardHandler
 import com.foundry.iptv.ui.focus.firstFocus
 import com.foundry.iptv.ui.focus.rememberFirstFocus
@@ -69,7 +70,7 @@ fun FavoritesScreen(modifier: Modifier = Modifier) {
 
     suspend fun loadOnce(): Result<List<Channel>> = withContext(Dispatchers.IO) {
         runCatching {
-            val client = buildApiClient(context)
+            val client = ApiClientHolder.get(context)
             val favIds = client.listFavorites().toSet()
             if (favIds.isEmpty()) {
                 emptyList()
@@ -94,7 +95,7 @@ fun FavoritesScreen(modifier: Modifier = Modifier) {
         val id = focusedChannelId ?: return
         scope.launch {
             withContext(Dispatchers.IO) {
-                runCatching { buildApiClient(context).toggleFavorite(id) }
+                runCatching { ApiClientHolder.get(context).toggleFavorite(id) }
             }
             refreshKey++
         }
@@ -151,10 +152,11 @@ fun FavoritesScreen(modifier: Modifier = Modifier) {
                                     channel = channel,
                                     onFocused = { focusedChannelId = channel.id },
                                     onPlay = {
+                                        WatchTracker.recordWatch(scope, context, MediaType.LIVE, channel.id, channel.name)
                                         scope.launch {
                                             val res = withContext(Dispatchers.IO) {
                                                 runCatching {
-                                                    buildApiClient(context).startStream(channel.id)
+                                                    ApiClientHolder.get(context).startStream(channel.id)
                                                 }
                                             }
                                             res.onSuccess { s ->
@@ -166,7 +168,7 @@ fun FavoritesScreen(modifier: Modifier = Modifier) {
                                         scope.launch {
                                             withContext(Dispatchers.IO) {
                                                 runCatching {
-                                                    buildApiClient(context).toggleFavorite(channel.id)
+                                                    ApiClientHolder.get(context).toggleFavorite(channel.id)
                                                 }
                                             }
                                             refreshKey++
@@ -261,13 +263,4 @@ private fun StarBadge(onClick: () -> Unit) {
     }
 }
 
-/**
- * Inline ApiClient factory — reads pairing prefs and applies the stored token.
- */
-internal fun buildApiClient(ctx: Context): ApiClient {
-    val prefs = ctx.getSharedPreferences("foundry_prefs", Context.MODE_PRIVATE)
-    val baseUrl = prefs.getString("server_url", null)
-        ?: error("No server_url in foundry_prefs — device not paired")
-    val token = prefs.getString("device_token", null).orEmpty()
-    return ApiClient(baseUrl).also { it.setToken(token) }
-}
+// ApiClient wiring moved to ui/common/ApiClientHolder.kt (W5-B).
