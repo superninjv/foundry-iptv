@@ -60,23 +60,27 @@ pub enum ViewMode {
     Multi,
 }
 
-/// A user-created deck of channels (legacy aggregated shape used by
-/// existing code paths).
+/// A user-created deck of channels.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Deck {
     pub id: String,
     pub name: String,
-    /// Channels contained in this deck (may be empty if not populated server-side).
+    /// Entries contained in this deck.
     #[serde(default)]
-    pub entries: Vec<Channel>,
+    pub entries: Vec<DeckEntry>,
 }
 
-/// Single entry within a deck.
+/// Single entry within a deck. W5-D enriched the server response to include
+/// the full resolved `Channel` object alongside the bare `channel_id` so
+/// native clients don't need to re-join against a 52K-channel list.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeckEntry {
     pub channel_id: String,
     pub position: i32,
     pub in_commercial: bool,
+    /// Full channel info if the server populated it (W5-D+).
+    #[serde(default)]
+    pub channel: Option<Channel>,
 }
 
 /// A VOD (movie) listing item returned by GET /api/vod.
@@ -126,6 +130,25 @@ pub struct UserSettings {
     pub email: String,
     pub device_label: Option<String>,
     pub version: String,
+    /// Short deterministic identifier derived from the device token
+    /// (first 8 hex chars of SHA-256). Non-reversible; safe to display.
+    pub token_id: String,
+    /// Platform string (e.g. `"android-fire-tv"`).
+    pub platform: String,
+}
+
+/// VOD/Episode streaming session returned by `start_vod_stream` /
+/// `start_episode_stream`. The URL points at the ts2hls proxy which
+/// transcodes the provider's VOD container into HLS on demand, so even
+/// though the underlying container is progressive, the player should
+/// treat it as HLS.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VodStreamSession {
+    pub sid: String,
+    pub url: String,
+    /// One of `"hls"` or `"progressive"`. Currently always `"hls"`
+    /// because the server wraps VOD via ts2hls.
+    pub kind: String,
 }
 
 /// Watch history entry returned by GET /api/history.
