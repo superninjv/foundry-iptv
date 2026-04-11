@@ -53,6 +53,15 @@ const APP_PREFIXES = [
   '/api/lists',
   '/api/admin',
   '/api/startup',
+  '/api/decks',
+  '/api/favorites',
+  '/api/history',
+  '/api/library',
+  '/api/multiview',
+  '/api/settings',
+  '/api/img-proxy',
+  '/api/ai',
+  '/api/signals',
 ];
 
 function isPublicRoute(pathname: string): boolean {
