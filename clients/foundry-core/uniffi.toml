@@ -1,0 +1,5 @@
+# uniffi configuration for foundry-core.
+# The UDL file declares the public surface exposed to Kotlin via JNI.
+# This file is intentionally minimal — full binding surface comes in a later wave.
+[bindings.kotlin]
+package_name = "com.foundry.iptv.core"

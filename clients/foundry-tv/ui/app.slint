@@ -1,0 +1,34 @@
+// Foundry TV — stub UI.
+// Replace with real screen components in the implementation wave.
+
+import { Button, VerticalBox } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    title: "Foundry TV";
+    preferred-width: 1920px;
+    preferred-height: 1080px;
+    background: #0d0d0d;
+
+    VerticalBox {
+        alignment: center;
+
+        Text {
+            text: "Foundry TV";
+            font-size: 48px;
+            color: #ffffff;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: "Connecting to server…";
+            font-size: 24px;
+            color: #aaaaaa;
+            horizontal-alignment: center;
+        }
+
+        Button {
+            text: "Settings";
+            // TODO: wire to state machine Navigate(Screen::Settings)
+        }
+    }
+}

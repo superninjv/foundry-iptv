@@ -1,0 +1,5 @@
+// Stub UDL — UniFFI interface definition for foundry-core.
+// Expand this file when the JNI binding surface is finalised.
+// See: https://mozilla.github.io/uniffi-rs/
+
+namespace foundry_core {};
