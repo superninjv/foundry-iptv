@@ -43,13 +43,16 @@ fun EmptyLibraryState(
                 .widthIn(max = 560.dp)
                 .padding(horizontal = 32.dp),
         ) {
+            // text-2xl font-bold var(--fg)
             Text(
                 text = title,
                 color = FoundryColors.OnSurface,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
             )
+            // text-base var(--fg-muted) — matches the web MediaGrid empty
+            // message (`src/components/MediaGrid.tsx:73-80`) typography.
             Text(
                 text = body,
                 color = FoundryColors.OnSurfaceVariant,

@@ -1,6 +1,5 @@
 package com.foundry.iptv.ui.live
 
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -9,9 +8,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -60,11 +58,10 @@ import kotlinx.coroutines.withContext
 /**
  * Live TV *library* — only channels the user has watched before.
  *
- * Per Jack's mandate ("the only way we find things is through search"),
- * there is no catalog browse, no category rail, and no 52k-channel scan on
- * this screen. Discovery lives entirely in the Search tab; this tab is a
- * small grid of already-known favorites backed by server-side
- * `iptv_watch_history`.
+ * Visual port of `src/components/ChannelGrid.tsx` (the auto-fill grid and the
+ * `ChannelCard` row). Per Jack's mandate ("the only way we find things is
+ * through search"), there is no catalog browse, no category rail, and no
+ * 52k-channel scan on this screen. Discovery lives entirely in the Search tab.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -124,26 +121,28 @@ fun LiveScreen(modifier: Modifier = Modifier) {
             loading -> Text(
                 text = "Loading…",
                 color = FoundryColors.OnSurfaceVariant,
-                fontSize = 20.sp,
+                fontSize = 16.sp,
                 modifier = Modifier.align(Alignment.Center),
             )
 
             errorText != null -> Text(
                 text = errorText!!,
-                color = Color(0xFFFF6666),
-                fontSize = 18.sp,
+                color = FoundryColors.Error,
+                fontSize = 16.sp,
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .padding(32.dp),
+                    .padding(24.dp),
             )
 
             channels.isEmpty() -> EmptyLibraryState()
 
+            // Matches web: `grid gap-2 gridTemplateColumns: repeat(auto-fill, minmax(220px, 1fr))`
+            // `src/components/ChannelGrid.tsx:213-217`.
             else -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 260.dp),
+                columns = GridCells.Adaptive(minSize = 220.dp),
                 contentPadding = PaddingValues(24.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 items(channels, key = { it.id }) { channel ->
@@ -177,10 +176,17 @@ fun LiveScreen(modifier: Modifier = Modifier) {
 }
 
 /**
- * Horizontal 72dp channel card — logo + name + optional subtitle.
+ * 1:1 port of the web `ChannelCard`:
+ *   `<Link className="flex items-center gap-3 rounded-lg border p-3"
+ *        style={{ backgroundColor: 'var(--bg-raised)',
+ *                 borderColor: 'var(--border)', minHeight: '48px' }}>`
+ * with an `h-10 w-10` logo, `text-sm font-semibold` title, and `text-xs`
+ * muted subtitle. `src/components/ChannelGrid.tsx:20-66`.
  *
- * Focus: scale animates to 1.05, background lifts to SurfaceBright, and
- * a 3dp Orange border appears.
+ * Focus: the web uses the global `*:focus-visible { outline: 2px solid
+ * var(--accent); outline-offset: 2px; }` from `src/app/globals.css:28`. We
+ * approximate that with a 2dp accent border and a subtle background lift —
+ * no scale, no shadow. Jack said flashy effects look "terrible".
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -190,24 +196,19 @@ internal fun LibraryChannelCard(
     onPlay: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (focused) 1.05f else 1f,
-        label = "channelCardScale",
-    )
     val borderColor = if (focused) FoundryColors.Orange else FoundryColors.Border
-    val borderWidth = if (focused) 3.dp else 1.dp
-    val bgColor = if (focused) FoundryColors.SurfaceBright else FoundryColors.Surface
+    val borderWidth = if (focused) 2.dp else 1.dp
+    val bgColor = if (focused) FoundryColors.SurfaceVariant else FoundryColors.Surface
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .height(72.dp)
-            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .defaultMinSize(minHeight = 48.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(bgColor)
             .border(borderWidth, borderColor, RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp)
+            .padding(12.dp)
             .onFocusChanged { focused = it.isFocused }
             .focusable()
             .onKeyEvent { ev ->
@@ -223,10 +224,13 @@ internal fun LibraryChannelCard(
             },
     ) {
         Box(
-            modifier = Modifier.size(48.dp),
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(FoundryColors.Background),
             contentAlignment = Alignment.Center,
         ) {
-            ChannelLogo(channel = channel, sizeDp = 48.dp)
+            ChannelLogo(channel = channel, sizeDp = 40.dp)
         }
         Spacer(Modifier.width(12.dp))
         androidx.compose.foundation.layout.Column(

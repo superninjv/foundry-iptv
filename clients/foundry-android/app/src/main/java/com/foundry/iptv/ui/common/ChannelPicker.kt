@@ -154,10 +154,13 @@ fun ChannelPicker(
                     .border(2.dp, FoundryColors.Border, RoundedCornerShape(16.dp))
                     .padding(24.dp),
             ) {
+                // Matches web `<h2 className="text-lg font-semibold">Add Channel</h2>`
+                // `src/components/multiview/ChannelPicker.tsx:76-78`.
                 Text(
-                    text = "Pick a channel",
+                    text = "Add Channel",
                     color = FoundryColors.OnBackground,
-                    fontSize = 22.sp,
+                    fontSize = 18.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                 )
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
@@ -232,6 +235,17 @@ fun ChannelPicker(
     }
 }
 
+/**
+ * 1:1 port of web channel row from
+ * `src/components/multiview/ChannelPicker.tsx:132-182`:
+ *   `<button className="flex w-full items-center gap-3 px-4 py-3 text-left"
+ *        style={{ color: 'var(--fg)', minHeight: '48px' }}>
+ *      <img className="h-8 w-8 rounded" />
+ *      <div className="text-sm font-medium">{name}</div>
+ *      <div className="text-xs var(--fg-muted)">{group}</div>
+ *    </button>`
+ * Focus: subtle bg lift to var(--hover) rgba(255,255,255,0.05).
+ */
 @Composable
 private fun ChannelPickerRow(
     channel: Channel,
@@ -244,14 +258,14 @@ private fun ChannelPickerRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(
-                if (focused) FoundryColors.OrangeDim else FoundryColors.SurfaceVariant,
+                if (focused) FoundryColors.SurfaceVariant else Color.Transparent,
             )
             .border(
                 width = if (focused) 2.dp else 0.dp,
                 color = if (focused) FoundryColors.Orange else Color.Transparent,
                 shape = RoundedCornerShape(8.dp),
             )
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
             .focusable()
             .onFocusChanged { focused = it.isFocused }
             .onKeyEvent { ev ->
@@ -265,12 +279,13 @@ private fun ChannelPickerRow(
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ChannelLogo(channel = channel, sizeDp = 40.dp)
+        ChannelLogo(channel = channel, sizeDp = 32.dp)
         Spacer(Modifier.width(12.dp))
         Text(
             text = channel.name,
             color = FoundryColors.OnSurface,
-            fontSize = 16.sp,
+            fontSize = 14.sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
         )
     }
 }
