@@ -2,9 +2,7 @@ package com.foundry.iptv.ui.hub
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.focusable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -90,16 +89,20 @@ fun FoundryHub(
                 .firstFocus(railFirstTab),
         )
 
-        // Content pane. We wrap the wave agent's composable in a focusable
-        // Box so we can (a) give D-pad Up a handle to bounce back to the
-        // rail and (b) expose a FocusRequester for the rail's Down key.
+        // Content pane. `focusGroup() + focusRestorer()` lets the rail's
+        // Down key request focus on this pane and have it cascade to the
+        // first focusable descendant (the child screen's grid), instead of
+        // trapping focus on the Box itself. Box is NOT focusable — if it
+        // were, D-pad Down would swallow input and the inner LazyGrid
+        // would never receive focus or scroll.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
                 .padding(24.dp)
                 .focusRequester(contentRequester)
-                .focusable()
+                .focusRestorer()
+                .focusGroup()
                 .onPreviewKeyEvent { event ->
                     if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
                         contentFocused = false
