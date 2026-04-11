@@ -41,4 +41,20 @@ object ApiClientHolder {
      */
     fun get(context: Context): ApiClient =
         getOrNull(context) ?: error("Foundry: missing credentials — re-pair required")
+
+    /**
+     * Forget the cached client so the next [getOrNull] call rebuilds from
+     * current prefs. Call this after clearing the device token from prefs
+     * (e.g. during unpair). Does NOT mutate the underlying Rust client in
+     * place — in-flight FFI calls on the old instance finish with their
+     * captured token, which avoids the race where a concurrent request
+     * sees a half-torn-down client.
+     */
+    fun invalidate() {
+        synchronized(lock) {
+            cached = null
+            cachedUrl = null
+            cachedToken = null
+        }
+    }
 }
