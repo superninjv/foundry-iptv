@@ -139,6 +139,223 @@ impl From<real_models::StreamSession> for StreamSession {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Category {
+    pub id: String,
+    pub name: String,
+    pub channel_count: u32,
+}
+
+impl From<real_models::Category> for Category {
+    fn from(c: real_models::Category) -> Self {
+        Category {
+            id: c.id,
+            name: c.name,
+            channel_count: c.channel_count,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct EpgEntry {
+    pub channel_id: String,
+    /// RFC3339 start time
+    pub start: String,
+    /// RFC3339 end time
+    pub end: String,
+    pub title: String,
+    pub description: Option<String>,
+}
+
+impl From<real_models::EpgEntry> for EpgEntry {
+    fn from(e: real_models::EpgEntry) -> Self {
+        EpgEntry {
+            channel_id: e.channel_id,
+            start: e.start.to_rfc3339(),
+            end: e.end.to_rfc3339(),
+            title: e.title,
+            description: e.description,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct VodItem {
+    pub stream_id: i64,
+    pub name: String,
+    pub stream_icon: Option<String>,
+    pub rating: Option<String>,
+    pub category_id: Option<String>,
+    pub container_extension: Option<String>,
+}
+
+impl From<real_models::VodItem> for VodItem {
+    fn from(v: real_models::VodItem) -> Self {
+        VodItem {
+            stream_id: v.stream_id,
+            name: v.name,
+            stream_icon: v.stream_icon,
+            rating: v.rating,
+            category_id: v.category_id,
+            container_extension: v.container_extension,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SeriesItem {
+    pub series_id: i64,
+    pub name: String,
+    pub cover: Option<String>,
+    pub plot: Option<String>,
+    pub genre: Option<String>,
+    pub rating: Option<String>,
+    pub category_id: Option<String>,
+}
+
+impl From<real_models::SeriesItem> for SeriesItem {
+    fn from(s: real_models::SeriesItem) -> Self {
+        SeriesItem {
+            series_id: s.series_id,
+            name: s.name,
+            cover: s.cover,
+            plot: s.plot,
+            genre: s.genre,
+            rating: s.rating,
+            category_id: s.category_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DeckEntry {
+    pub channel_id: String,
+    pub position: i32,
+    pub in_commercial: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct Deck {
+    pub id: String,
+    pub name: String,
+    pub entries: Vec<DeckEntry>,
+}
+
+impl From<real_models::Deck> for Deck {
+    fn from(d: real_models::Deck) -> Self {
+        let entries = d
+            .entries
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| DeckEntry {
+                channel_id: c.id,
+                position: i as i32,
+                in_commercial: false,
+            })
+            .collect();
+        Deck {
+            id: d.id,
+            name: d.name,
+            entries,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UserList {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub channel_count: u32,
+}
+
+impl From<real_models::UserList> for UserList {
+    fn from(l: real_models::UserList) -> Self {
+        UserList {
+            id: l.id,
+            name: l.name,
+            kind: l.kind,
+            channel_count: l.channel_count,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SearchResult {
+    pub channels: Vec<Channel>,
+    pub programs: Vec<EpgEntry>,
+    pub vod: Vec<VodItem>,
+}
+
+impl From<real_models::SearchResult> for SearchResult {
+    fn from(s: real_models::SearchResult) -> Self {
+        SearchResult {
+            channels: s.channels.into_iter().map(Channel::from).collect(),
+            programs: s.programs.into_iter().map(EpgEntry::from).collect(),
+            vod: s.vod.into_iter().map(VodItem::from).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StartupConfig {
+    pub default_deck_id: Option<String>,
+    pub default_view_mode: String,
+    pub allow_user_override: bool,
+}
+
+impl From<real_models::StartupConfig> for StartupConfig {
+    fn from(c: real_models::StartupConfig) -> Self {
+        let view_mode = match c.default_view_mode {
+            real_models::ViewMode::Single => "single".to_string(),
+            real_models::ViewMode::Multi => "multi".to_string(),
+        };
+        StartupConfig {
+            default_deck_id: c.default_deck_id,
+            default_view_mode: view_mode,
+            allow_user_override: c.allow_user_override,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UserSettings {
+    pub user_id: String,
+    pub email: String,
+    pub device_label: Option<String>,
+    pub version: String,
+}
+
+impl From<real_models::UserSettings> for UserSettings {
+    fn from(s: real_models::UserSettings) -> Self {
+        UserSettings {
+            user_id: s.user_id,
+            email: s.email,
+            device_label: s.device_label,
+            version: s.version,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct WatchHistoryEntry {
+    pub channel_id: String,
+    pub started_at: String,
+    pub media_type: String,
+    pub vod_stream_id: Option<i64>,
+}
+
+impl From<real_models::WatchHistoryEntry> for WatchHistoryEntry {
+    fn from(h: real_models::WatchHistoryEntry) -> Self {
+        WatchHistoryEntry {
+            channel_id: h.channel_id,
+            started_at: h.started_at,
+            media_type: h.media_type,
+            vod_stream_id: h.vod_stream_id,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ApiClient — blocking façade around the async client.
 // ---------------------------------------------------------------------------
@@ -182,19 +399,27 @@ impl ApiClient {
         *guard = real_api::ApiClient::new(base).with_token(token);
     }
 
-    pub fn list_channels(&self) -> Result<Vec<Channel>, ApiError> {
-        log::info!("ApiClient::list_channels entered");
-        let rt = self.rt.clone();
-        let (base, token) = {
-            let guard = self.inner.lock().unwrap();
-            (guard.base_url.clone(), guard.token_for_cleanup())
-        };
-        log::info!("list_channels base={} have_token={}", base, token.is_some());
+    /// Clone the underlying async client so we can move it into a block_on
+    /// future without holding the mutex across an await.
+    fn real(&self) -> real_api::ApiClient {
+        let guard = self.inner.lock().unwrap();
+        let base = guard.base_url.clone();
+        let token = guard.token_for_cleanup();
         let mut real = real_api::ApiClient::new(base);
         if let Some(t) = token {
             real = real.with_token(t);
         }
-        log::info!("list_channels about to block_on reqwest");
+        real
+    }
+
+    // -----------------------------------------------------------------------
+    // Channels + EPG
+    // -----------------------------------------------------------------------
+
+    pub fn list_channels(&self) -> Result<Vec<Channel>, ApiError> {
+        log::info!("ApiClient::list_channels entered");
+        let rt = self.rt.clone();
+        let real = self.real();
         let channels = rt
             .block_on(async move { real.list_channels(None).await })
             .map_err(|e| {
@@ -205,16 +430,43 @@ impl ApiClient {
         Ok(channels.into_iter().map(Channel::from).collect())
     }
 
+    pub fn list_channels_by_category(
+        &self,
+        category_id: String,
+    ) -> Result<Vec<Channel>, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let channels = rt
+            .block_on(async move { real.list_channels(Some(&category_id)).await })
+            .map_err(ApiError::from)?;
+        Ok(channels.into_iter().map(Channel::from).collect())
+    }
+
+    pub fn list_categories(&self) -> Result<Vec<Category>, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let cats = rt
+            .block_on(async move { real.list_categories().await })
+            .map_err(ApiError::from)?;
+        Ok(cats.into_iter().map(Category::from).collect())
+    }
+
+    pub fn get_epg(&self, channel_id: String, hours: u32) -> Result<Vec<EpgEntry>, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let entries = rt
+            .block_on(async move { real.get_epg(&channel_id, Some(hours)).await })
+            .map_err(ApiError::from)?;
+        Ok(entries.into_iter().map(EpgEntry::from).collect())
+    }
+
+    // -----------------------------------------------------------------------
+    // Streaming
+    // -----------------------------------------------------------------------
+
     pub fn start_stream(&self, channel_id: String) -> Result<StreamSession, ApiError> {
         let rt = self.rt.clone();
-        let (base, token) = {
-            let guard = self.inner.lock().unwrap();
-            (guard.base_url.clone(), guard.token_for_cleanup())
-        };
-        let mut real = real_api::ApiClient::new(base);
-        if let Some(t) = token {
-            real = real.with_token(t);
-        }
+        let real = self.real();
         let session = rt
             .block_on(async move { real.start_stream(&channel_id, None).await })
             .map_err(ApiError::from)?;
@@ -223,17 +475,189 @@ impl ApiClient {
 
     pub fn stop_stream(&self, channel_id: String, sid: String) -> Result<(), ApiError> {
         let rt = self.rt.clone();
-        let (base, token) = {
-            let guard = self.inner.lock().unwrap();
-            (guard.base_url.clone(), guard.token_for_cleanup())
-        };
-        let mut real = real_api::ApiClient::new(base);
-        if let Some(t) = token {
-            real = real.with_token(t);
-        }
+        let real = self.real();
         rt.block_on(async move { real.stop_stream(&channel_id, &sid).await })
             .map_err(ApiError::from)?;
         Ok(())
+    }
+
+    pub fn change_quality(&self, sid: String, quality: String) -> Result<String, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        rt.block_on(async move { real.change_quality(&sid, &quality).await })
+            .map_err(ApiError::from)
+    }
+
+    // -----------------------------------------------------------------------
+    // VOD / Series
+    // -----------------------------------------------------------------------
+
+    pub fn list_vod(&self, category: Option<String>) -> Result<Vec<VodItem>, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let vods = rt
+            .block_on(async move { real.list_vod(category.as_deref()).await })
+            .map_err(ApiError::from)?;
+        Ok(vods.into_iter().map(VodItem::from).collect())
+    }
+
+    pub fn get_vod_detail(&self, id: String) -> Result<String, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        rt.block_on(async move { real.get_vod_detail(&id).await })
+            .map_err(ApiError::from)
+    }
+
+    pub fn list_series(&self, category: Option<String>) -> Result<Vec<SeriesItem>, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let series = rt
+            .block_on(async move { real.list_series(category.as_deref()).await })
+            .map_err(ApiError::from)?;
+        Ok(series.into_iter().map(SeriesItem::from).collect())
+    }
+
+    pub fn get_series_detail(&self, id: String) -> Result<String, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        rt.block_on(async move { real.get_series_detail(&id).await })
+            .map_err(ApiError::from)
+    }
+
+    // -----------------------------------------------------------------------
+    // Decks
+    // -----------------------------------------------------------------------
+
+    pub fn list_decks(&self) -> Result<Vec<Deck>, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let decks = rt
+            .block_on(async move { real.get_decks().await })
+            .map_err(ApiError::from)?;
+        Ok(decks.into_iter().map(Deck::from).collect())
+    }
+
+    pub fn get_deck(&self, id: String) -> Result<Deck, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let deck = rt
+            .block_on(async move { real.get_deck(&id).await })
+            .map_err(ApiError::from)?;
+        Ok(deck.into())
+    }
+
+    pub fn start_deck_stream(
+        &self,
+        deck_id: String,
+        entry_index: u32,
+        quality: Option<String>,
+    ) -> Result<StreamSession, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let session = rt
+            .block_on(async move {
+                real.start_deck_stream(&deck_id, entry_index, quality.as_deref())
+                    .await
+            })
+            .map_err(ApiError::from)?;
+        Ok(session.into())
+    }
+
+    // -----------------------------------------------------------------------
+    // Lists / favorites
+    // -----------------------------------------------------------------------
+
+    pub fn list_lists(&self) -> Result<Vec<UserList>, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let lists = rt
+            .block_on(async move { real.list_lists().await })
+            .map_err(ApiError::from)?;
+        Ok(lists.into_iter().map(UserList::from).collect())
+    }
+
+    pub fn list_list_channels(&self, list_id: String) -> Result<Vec<Channel>, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let channels = rt
+            .block_on(async move { real.list_list_channels(&list_id).await })
+            .map_err(ApiError::from)?;
+        Ok(channels.into_iter().map(Channel::from).collect())
+    }
+
+    pub fn add_to_list(&self, list_id: String, channel_id: String) -> Result<(), ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        rt.block_on(async move { real.add_to_list(&list_id, &channel_id).await })
+            .map_err(ApiError::from)?;
+        Ok(())
+    }
+
+    pub fn list_favorites(&self) -> Result<Vec<String>, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        rt.block_on(async move { real.list_favorites().await })
+            .map_err(ApiError::from)
+    }
+
+    pub fn toggle_favorite(&self, channel_id: String) -> Result<bool, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        rt.block_on(async move { real.toggle_favorite(&channel_id).await })
+            .map_err(ApiError::from)
+    }
+
+    // -----------------------------------------------------------------------
+    // Search
+    // -----------------------------------------------------------------------
+
+    pub fn search(&self, query: String) -> Result<SearchResult, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let result = rt
+            .block_on(async move { real.search(&query).await })
+            .map_err(ApiError::from)?;
+        Ok(result.into())
+    }
+
+    pub fn ai_search(&self, query: String) -> Result<SearchResult, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let result = rt
+            .block_on(async move { real.ai_search(&query).await })
+            .map_err(ApiError::from)?;
+        Ok(result.into())
+    }
+
+    // -----------------------------------------------------------------------
+    // Settings / history
+    // -----------------------------------------------------------------------
+
+    pub fn get_startup(&self) -> Result<StartupConfig, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let cfg = rt
+            .block_on(async move { real.get_startup().await })
+            .map_err(ApiError::from)?;
+        Ok(cfg.into())
+    }
+
+    pub fn get_settings(&self) -> Result<UserSettings, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let settings = rt
+            .block_on(async move { real.get_settings().await })
+            .map_err(ApiError::from)?;
+        Ok(settings.into())
+    }
+
+    pub fn list_watch_history(&self) -> Result<Vec<WatchHistoryEntry>, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let entries = rt
+            .block_on(async move { real.list_watch_history().await })
+            .map_err(ApiError::from)?;
+        Ok(entries.into_iter().map(WatchHistoryEntry::from).collect())
     }
 }
 
@@ -249,7 +673,9 @@ pub fn exchange_pairing_code(
 ) -> Result<String, AuthError> {
     let rt = Runtime::new().map_err(|e| AuthError::Parse { msg: e.to_string() })?;
     let auth = rt
-        .block_on(async move { real_auth::DeviceAuth::exchange_pairing_code(&base_url, &code, &label).await })
+        .block_on(async move {
+            real_auth::DeviceAuth::exchange_pairing_code(&base_url, &code, &label).await
+        })
         .map_err(AuthError::from)?;
     Ok(auth.token)
 }
