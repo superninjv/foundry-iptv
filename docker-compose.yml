@@ -1,0 +1,130 @@
+# foundry-iptv — root docker-compose.yml
+#
+# NOTE: ts2hls LAN-isolation is enforced at the HOST level via a systemd unit
+# that installs a DOCKER-USER iptables rule. The rule must be present on the
+# host machine. See memory/project_iptv_lan_isolation_docker_user.md.
+# Do NOT attempt to replicate it here — Docker rewrites the FORWARD chain on
+# container churn, breaking it.
+
+name: foundry-iptv
+
+networks:
+  foundry_net:
+    driver: bridge
+
+volumes:
+  foundry_pg_data:
+  foundry_redis_data:
+  caddy_data:
+  caddy_config:
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    networks: [foundry_net]
+    volumes:
+      - foundry_pg_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-foundry}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-foundry}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-foundry} -d ${POSTGRES_DB:-foundry}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [foundry_net]
+    volumes:
+      - foundry_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  foundry-migrate:
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+    restart: on-failure
+    networks: [foundry_net]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-foundry}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-foundry}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["npx", "tsx", "src/lib/db/migrate.ts", "--up"]
+
+  foundry-iptv:
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+    restart: unless-stopped
+    networks: [foundry_net]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-foundry}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-foundry}
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "127.0.0.1:3003:3003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      foundry-migrate:
+        condition: service_completed_successfully
+
+  ts2hls:
+    build:
+      context: services/ts2hls
+    restart: unless-stopped
+    networks: [foundry_net]
+    read_only: true
+    tmpfs:
+      - /tmp:size=2G
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    user: "1000:1000"
+    ports:
+      - "127.0.0.1:3103:3103"
+    environment:
+      TS2HLS_SHARED_SECRET: ${TS2HLS_SHARED_SECRET:?TS2HLS_SHARED_SECRET must be set}
+      HOST: "0.0.0.0"
+      STREAM_ALLOWED_HOSTS: ${STREAM_ALLOWED_HOSTS:-}
+      ENABLE_COMMERCIAL_DETECTION: ${ENABLE_COMMERCIAL_DETECTION:-false}
+      FOUNDRY_API_URL: http://foundry-iptv:3003
+      TS2HLS_BEARER_TOKEN: ${TS2HLS_BEARER_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3103/health').then(r => process.exit(r.ok ? 0 : 1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    networks: [foundry_net]
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - foundry-iptv
+      - ts2hls

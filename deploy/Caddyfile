@@ -1,0 +1,21 @@
+# Foundry IPTV reverse proxy — LAN only.
+# HTTPS should be fronted by Tailscale, Cloudflare Tunnel, or another upstream.
+:80 {
+    encode gzip
+
+    # HLS segments — served by ts2hls
+    handle_path /hls/* {
+        reverse_proxy ts2hls:3103
+    }
+
+    # Optional raw M3U/XMLTV static serving (if household mounts files locally)
+    handle_path /raw/* {
+        root * /srv/raw
+        file_server
+    }
+
+    # Everything else → Next.js
+    handle {
+        reverse_proxy foundry-iptv:3003
+    }
+}
