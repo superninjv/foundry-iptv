@@ -15,6 +15,7 @@ import {
   type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
+import { ChevronLeftIcon } from '@/components/icons';
 
 export interface PlayerOverlayProps {
   visible?: boolean;
@@ -152,9 +153,7 @@ export default function PlayerOverlay({
               aria-label="Back"
               tabIndex={0}
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M19 12H5M12 19l-7-7 7-7" />
-              </svg>
+              <ChevronLeftIcon size={24} />
             </button>
           )}
           <div className="min-w-0 flex-1">
