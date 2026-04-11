@@ -29,7 +29,7 @@ pub use error::{ApiError, AuthError};
 #[cfg(not(feature = "uniffi"))]
 pub use models::{
     Category, Channel, Deck, DeckEntry, EpgEntry, SearchResult, SeriesItem, StartupConfig,
-    StreamSession, UserList, UserSettings, ViewMode, VodItem, WatchHistoryEntry,
+    StreamSession, UserList, UserSettings, ViewMode, VodItem, VodStreamSession, WatchHistoryEntry,
 };
 
 // uniffi scaffolding (generated from src/foundry-core.udl at build time).
@@ -42,6 +42,6 @@ uniffi::include_scaffolding!("foundry_core");
 #[cfg(feature = "uniffi")]
 pub use ffi::{
     exchange_pairing_code, ApiClient, ApiError, AuthError, Category, Channel, Deck, DeckEntry,
-    EpgEntry, SearchResult, SeriesItem, StartupConfig, StreamSession, UserList, UserSettings,
-    VodItem, WatchHistoryEntry,
+    EpgBatchEntry, EpgEntry, MediaType, SearchResult, SeriesItem, StartupConfig, StreamSession,
+    UserList, UserSettings, VodItem, VodStreamSession, WatchHistoryEntry,
 };

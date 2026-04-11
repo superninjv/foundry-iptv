@@ -1,10 +1,13 @@
 use crate::error::ApiError;
 use crate::models::{
-    Category, Channel, Deck, EpgEntry, SearchResult, SeriesItem, StartupConfig, StreamSession,
-    UserList, UserSettings, VodItem, WatchHistoryEntry,
+    Category, Channel, Deck, DeckEntry, EpgEntry, SearchResult, SeriesItem, StartupConfig,
+    StreamSession, UserList, UserSettings, VodItem, VodStreamSession, WatchHistoryEntry,
 };
 use serde::Deserialize;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
+use std::sync::RwLock;
+use std::time::{Duration, Instant};
 
 /// Raw server response for POST /api/stream/<id> — channel_id is not included
 /// in the server response; we inject it from the request parameter.
@@ -208,35 +211,85 @@ struct FavoriteBody<'a> {
 // Client
 // ---------------------------------------------------------------------------
 
+/// Cache TTL in seconds — matches the web's
+/// `Cache-Control: private, max-age=30, stale-while-revalidate=300`.
+const CACHE_TTL: Duration = Duration::from_secs(30);
+
+/// In-memory TTL cache for list-oriented endpoints. These are the
+/// expensive ones the FireStick Guide / Library screens hit on every
+/// navigation and they barely change between calls.
+#[derive(Default)]
+struct ApiCache {
+    channels: RwLock<Option<(Instant, Vec<Channel>)>>,
+    categories: RwLock<Option<(Instant, Vec<Category>)>>,
+    vod: RwLock<Option<(Instant, Vec<VodItem>)>>,
+    series: RwLock<Option<(Instant, Vec<SeriesItem>)>>,
+}
+
+fn cache_get<T: Clone>(slot: &RwLock<Option<(Instant, T)>>) -> Option<T> {
+    let guard = slot.read().ok()?;
+    let (at, value) = guard.as_ref()?;
+    if at.elapsed() < CACHE_TTL {
+        Some(value.clone())
+    } else {
+        None
+    }
+}
+
+fn cache_put<T>(slot: &RwLock<Option<(Instant, T)>>, value: T) {
+    if let Ok(mut guard) = slot.write() {
+        *guard = Some((Instant::now(), value));
+    }
+}
+
 /// Thin HTTP client wrapping the Foundry IPTV Next.js API.
 ///
 /// Construct with [`ApiClient::new`] then attach a token with
-/// [`ApiClient::with_token`] before calling any authenticated method.
+/// [`ApiClient::with_token`] (builder) or [`ApiClient::set_token`] (mutating)
+/// before calling any authenticated method.
+///
+/// The underlying `reqwest::Client` is built **exactly once** at
+/// construction time — swapping tokens does not rebuild it — so HTTPS
+/// keepalive + TLS session tickets are reused across every FFI call.
 pub struct ApiClient {
     pub base_url: String,
-    token: Option<String>,
+    token: RwLock<Option<String>>,
     http: reqwest::Client,
+    cache: ApiCache,
 }
 
 impl ApiClient {
     /// Create a client pointed at `base_url`. Call [`with_token`](Self::with_token)
-    /// before making authenticated requests.
+    /// or [`set_token`](Self::set_token) before making authenticated requests.
     pub fn new(base_url: impl Into<String>) -> Self {
         let http = reqwest::Client::builder()
             .use_rustls_tls()
+            .pool_idle_timeout(Duration::from_secs(90))
+            .pool_max_idle_per_host(8)
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
         Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
-            token: None,
+            token: RwLock::new(None),
             http,
+            cache: ApiCache::default(),
         }
     }
 
     /// Attach a device bearer token (builder pattern).
-    pub fn with_token(mut self, token: impl Into<String>) -> Self {
-        self.token = Some(token.into());
+    pub fn with_token(self, token: impl Into<String>) -> Self {
+        if let Ok(mut guard) = self.token.write() {
+            *guard = Some(token.into());
+        }
         self
+    }
+
+    /// Mutate the stored bearer token in place — no rebuild of the
+    /// underlying `reqwest::Client`.
+    pub fn set_token(&self, token: impl Into<String>) {
+        if let Ok(mut guard) = self.token.write() {
+            *guard = Some(token.into());
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -248,7 +301,11 @@ impl ApiClient {
     }
 
     fn authed(&self, req: reqwest::RequestBuilder) -> Result<reqwest::RequestBuilder, ApiError> {
-        match &self.token {
+        let guard = self
+            .token
+            .read()
+            .map_err(|_| ApiError::Other("token lock poisoned".to_string()))?;
+        match guard.as_ref() {
             Some(t) => Ok(req.bearer_auth(t)),
             None => Err(ApiError::Unauthenticated),
         }
@@ -272,7 +329,7 @@ impl ApiClient {
     /// Returns a clone of the stored token, if any. Used by [`StreamController`]
     /// for best-effort cleanup in `Drop`.
     pub fn token_for_cleanup(&self) -> Option<String> {
-        self.token.clone()
+        self.token.read().ok().and_then(|g| g.clone())
     }
 
     // -----------------------------------------------------------------------
@@ -291,7 +348,13 @@ impl ApiClient {
     // -----------------------------------------------------------------------
 
     /// `GET /api/channels?category=<cat>` — list channels, optionally filtered.
+    /// The unfiltered (category=None) path is cached for 30 seconds.
     pub async fn list_channels(&self, category: Option<&str>) -> Result<Vec<Channel>, ApiError> {
+        if category.is_none() {
+            if let Some(cached) = cache_get(&self.cache.channels) {
+                return Ok(cached);
+            }
+        }
         let mut req = self.authed(self.http.get(self.url("/api/channels")))?;
         if let Some(cat) = category {
             req = req.query(&[("category", cat)]);
@@ -299,26 +362,72 @@ impl ApiClient {
         let resp = req.send().await?;
         let resp = Self::check(resp).await?;
         let body: ChannelsResponse = resp.json().await?;
+        if category.is_none() {
+            cache_put(&self.cache.channels, body.channels.clone());
+        }
         Ok(body.channels)
     }
 
-    /// `GET /api/channels/categories` — list categories. The server currently
-    /// returns a flat `string[]` of names; we wrap each into a [`Category`]
-    /// with placeholder zero counts (the name is also reused as the id).
+    /// `GET /api/channels/categories` — list categories.
+    ///
+    /// W5-D changed the server shape from `string[]` to
+    /// `{ categories: [{ name, count }] }`. We accept both shapes for
+    /// forward + backward compat and cache the result for 30 seconds.
     pub async fn list_categories(&self) -> Result<Vec<Category>, ApiError> {
+        if let Some(cached) = cache_get(&self.cache.categories) {
+            return Ok(cached);
+        }
         let req = self.authed(self.http.get(self.url("/api/channels/categories")))?;
         let resp = req.send().await?;
         let resp = Self::check(resp).await?;
         let body: Value = resp.json().await?;
-        let names: Vec<String> = match body {
+
+        let entries: Vec<Category> = match body {
+            // Legacy: ["Sports", "News", ...]
             Value::Array(arr) => arr
                 .into_iter()
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .map(|n| Category {
+                    id: n.clone(),
+                    name: n,
+                    channel_count: 0,
+                })
                 .collect(),
+            // W5-D: { categories: [{name, count}] } — also accepts legacy
+            // { categories: ["name", ...] } for safety.
             Value::Object(ref map) => {
                 if let Some(Value::Array(arr)) = map.get("categories") {
                     arr.iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .filter_map(|v| {
+                            if let Some(s) = v.as_str() {
+                                Some(Category {
+                                    id: s.to_string(),
+                                    name: s.to_string(),
+                                    channel_count: 0,
+                                })
+                            } else if let Some(obj) = v.as_object() {
+                                let name = obj
+                                    .get("name")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                if name.is_empty() {
+                                    return None;
+                                }
+                                let count = obj
+                                    .get("count")
+                                    .and_then(|x| x.as_u64())
+                                    .unwrap_or(0)
+                                    as u32;
+                                Some(Category {
+                                    id: name.clone(),
+                                    name,
+                                    channel_count: count,
+                                })
+                            } else {
+                                None
+                            }
+                        })
                         .collect()
                 } else {
                     vec![]
@@ -326,14 +435,8 @@ impl ApiClient {
             }
             _ => vec![],
         };
-        Ok(names
-            .into_iter()
-            .map(|n| Category {
-                id: n.clone(),
-                name: n,
-                channel_count: 0,
-            })
-            .collect())
+        cache_put(&self.cache.categories, entries.clone());
+        Ok(entries)
     }
 
     /// `GET /api/epg/<channelId>` — get EPG programme list for a channel.
@@ -448,7 +551,7 @@ impl ApiClient {
         let channel_id = deck
             .entries
             .get(idx)
-            .map(|c| c.id.clone())
+            .map(|e| e.channel_id.clone())
             .ok_or_else(|| ApiError::Other(format!("deck entry {} not found", entry_index)))?;
         self.start_stream(&channel_id, quality).await
     }
@@ -457,8 +560,13 @@ impl ApiClient {
     // VOD / Series
     // -----------------------------------------------------------------------
 
-    /// `GET /api/vod?category=<cat>`
+    /// `GET /api/vod?category=<cat>` — unfiltered list is cached 30s.
     pub async fn list_vod(&self, category: Option<&str>) -> Result<Vec<VodItem>, ApiError> {
+        if category.is_none() {
+            if let Some(cached) = cache_get(&self.cache.vod) {
+                return Ok(cached);
+            }
+        }
         let mut req = self.authed(self.http.get(self.url("/api/vod")))?;
         if let Some(cat) = category {
             req = req.query(&[("category", cat)]);
@@ -466,7 +574,11 @@ impl ApiClient {
         let resp = req.send().await?;
         let resp = Self::check(resp).await?;
         let body: VodStreamsResponse = resp.json().await?;
-        Ok(body.streams.into_iter().map(VodItem::from).collect())
+        let items: Vec<VodItem> = body.streams.into_iter().map(VodItem::from).collect();
+        if category.is_none() {
+            cache_put(&self.cache.vod, items.clone());
+        }
+        Ok(items)
     }
 
     /// `GET /api/vod/<id>` — returns the raw VodInfo JSON as a string. The
@@ -480,8 +592,13 @@ impl ApiClient {
         Ok(resp.text().await?)
     }
 
-    /// `GET /api/series?category=<cat>`
+    /// `GET /api/series?category=<cat>` — unfiltered list is cached 30s.
     pub async fn list_series(&self, category: Option<&str>) -> Result<Vec<SeriesItem>, ApiError> {
+        if category.is_none() {
+            if let Some(cached) = cache_get(&self.cache.series) {
+                return Ok(cached);
+            }
+        }
         let mut req = self.authed(self.http.get(self.url("/api/series")))?;
         if let Some(cat) = category {
             req = req.query(&[("category", cat)]);
@@ -489,7 +606,11 @@ impl ApiClient {
         let resp = req.send().await?;
         let resp = Self::check(resp).await?;
         let body: SeriesListResponse = resp.json().await?;
-        Ok(body.series.into_iter().map(SeriesItem::from).collect())
+        let items: Vec<SeriesItem> = body.series.into_iter().map(SeriesItem::from).collect();
+        if category.is_none() {
+            cache_put(&self.cache.series, items.clone());
+        }
+        Ok(items)
     }
 
     /// `GET /api/series/<id>` — returns the raw SeriesInfo JSON as a string.
@@ -614,15 +735,30 @@ impl ApiClient {
 
     /// Best-effort user settings: the web app has no single `/api/settings`
     /// endpoint — it composes session + household + version. We synthesize a
-    /// [`UserSettings`] from `/api/startup` + the CARGO_PKG_VERSION so native
-    /// clients have *something* to render. Later waves can expand this.
+    /// [`UserSettings`] from `/api/startup` + CARGO_PKG_VERSION + a SHA-256
+    /// digest of the stored token so native clients can at least render a
+    /// non-reversible device identifier.
     pub async fn get_settings(&self) -> Result<UserSettings, ApiError> {
         let startup = self.get_startup().await.ok();
+        let token_id = self
+            .token
+            .read()
+            .ok()
+            .and_then(|g| g.clone())
+            .map(|t| {
+                let mut h = Sha256::new();
+                h.update(t.as_bytes());
+                let digest = h.finalize();
+                hex::encode(digest).chars().take(8).collect::<String>()
+            })
+            .unwrap_or_default();
         Ok(UserSettings {
             user_id: String::new(),
             email: String::new(),
             device_label: startup.and_then(|s| s.default_deck_id),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            token_id,
+            platform: "android-fire-tv".to_string(),
         })
     }
 
@@ -634,7 +770,166 @@ impl ApiClient {
         let body: HistoryResponse = resp.json().await?;
         Ok(body.history.into_iter().map(WatchHistoryEntry::from).collect())
     }
+
+    /// `POST /api/history` — record a watch event. Mirrors the web's
+    /// fire-and-forget pattern; errors are returned but callers generally
+    /// drop them.
+    ///
+    /// * `media_type` — "live" | "vod" | "series"
+    /// * `id` — channel_id for live, stream_id for VOD, series_id for series
+    pub async fn record_watch_history(
+        &self,
+        media_type: &str,
+        id: &str,
+    ) -> Result<(), ApiError> {
+        let body = match media_type {
+            "vod" | "series" => {
+                let stream_id: i64 = id.parse().map_err(|_| {
+                    ApiError::Other(format!("record_watch_history: '{}' not numeric", id))
+                })?;
+                serde_json::json!({
+                    "channelId": format!("{}:{}", media_type, stream_id),
+                    "mediaType": media_type,
+                    "vodStreamId": stream_id,
+                })
+            }
+            _ => serde_json::json!({ "channelId": id, "mediaType": "live" }),
+        };
+        let req = self
+            .authed(self.http.post(self.url("/api/history")))?
+            .json(&body);
+        let resp = req.send().await?;
+        Self::check(resp).await?;
+        Ok(())
+    }
+
+    /// `POST /api/stream/vod/<streamId>` — start a ts2hls session for a
+    /// VOD movie. Returns an HLS URL even though the underlying container
+    /// is progressive (ts2hls wraps it).
+    pub async fn start_vod_stream(
+        &self,
+        stream_id: &str,
+        ext: Option<&str>,
+    ) -> Result<VodStreamSession, ApiError> {
+        self.start_vod_like(stream_id, "movie", ext).await
+    }
+
+    /// `POST /api/stream/vod/<episodeId>` with `type: "series"` — start a
+    /// ts2hls session for a series episode. `episode_id` is the Xtream
+    /// episode stream id.
+    pub async fn start_episode_stream(
+        &self,
+        episode_id: &str,
+        ext: Option<&str>,
+    ) -> Result<VodStreamSession, ApiError> {
+        self.start_vod_like(episode_id, "series", ext).await
+    }
+
+    async fn start_vod_like(
+        &self,
+        id: &str,
+        kind: &str,
+        ext: Option<&str>,
+    ) -> Result<VodStreamSession, ApiError> {
+        let url = self.url(&format!("/api/stream/vod/{}", id));
+        let body = serde_json::json!({
+            "type": kind,
+            "ext": ext.unwrap_or("mp4"),
+        });
+        let req = self.authed(self.http.post(url))?.json(&body);
+        let resp = req.send().await?;
+        let resp = Self::check(resp).await?;
+        #[derive(Deserialize)]
+        struct VodStreamResponse {
+            sid: String,
+            #[serde(rename = "hlsUrl")]
+            hls_url: String,
+        }
+        let raw: VodStreamResponse = resp.json().await?;
+        Ok(VodStreamSession {
+            sid: raw.sid,
+            url: raw.hls_url,
+            // Server always returns ts2hls-wrapped HLS even for
+            // "progressive" sources; client should use StreamKind.HLS.
+            kind: "hls".to_string(),
+        })
+    }
+
+    /// Parallel fan-out over `GET /api/epg/<id>` — the Guide screen uses
+    /// this to fetch EPG for every visible channel without 200 sequential
+    /// round-trips. Concurrency is bounded to 16 in-flight requests via
+    /// `tokio::task::JoinSet` so a slow upstream can't starve the worker
+    /// pool.
+    pub async fn get_epg_batch(
+        &self,
+        channel_ids: &[String],
+        hours: Option<u32>,
+    ) -> Result<Vec<(String, Vec<EpgEntry>)>, ApiError> {
+        use std::sync::Arc;
+        use tokio::sync::Semaphore;
+        use tokio::task::JoinSet;
+
+        let semaphore = Arc::new(Semaphore::new(16));
+        let mut set: JoinSet<(String, Result<Vec<EpgEntry>, ApiError>)> = JoinSet::new();
+
+        let token = self.token_for_cleanup();
+        let base = self.base_url.clone();
+        let http = self.http.clone();
+
+        for cid in channel_ids {
+            let cid = cid.clone();
+            let sem = semaphore.clone();
+            let token = token.clone();
+            let base = base.clone();
+            let http = http.clone();
+            let _hours = hours;
+            set.spawn(async move {
+                let _permit = match sem.acquire_owned().await {
+                    Ok(p) => p,
+                    Err(_) => {
+                        return (
+                            cid,
+                            Err(ApiError::Other("semaphore closed".to_string())),
+                        );
+                    }
+                };
+                let url = format!("{}/api/epg/{}", base, cid);
+                let mut req = http.get(&url);
+                if let Some(t) = &token {
+                    req = req.bearer_auth(t);
+                } else {
+                    return (cid, Err(ApiError::Unauthenticated));
+                }
+                let res = async {
+                    let resp = req.send().await?;
+                    let resp = Self::check(resp).await?;
+                    let body: EpgResponse = resp.json().await?;
+                    Ok::<_, ApiError>(body.programs)
+                }
+                .await;
+                (cid, res)
+            });
+        }
+
+        let mut out = Vec::with_capacity(channel_ids.len());
+        while let Some(joined) = set.join_next().await {
+            match joined {
+                Ok((cid, Ok(programs))) => out.push((cid, programs)),
+                Ok((cid, Err(e))) => {
+                    log::warn!("get_epg_batch[{}] failed: {:?}", cid, e);
+                    // On failure, return empty list for this channel so
+                    // the caller can still render everything else.
+                    out.push((cid, Vec::new()));
+                }
+                Err(join_err) => {
+                    return Err(ApiError::Other(format!("join error: {}", join_err)));
+                }
+            }
+        }
+        Ok(out)
+    }
 }
+
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -643,6 +938,9 @@ impl ApiClient {
 /// Convert the server's deck JSON (which has varying shapes depending on
 /// whether it's from `/api/decks` list vs `/api/decks/<id>` detail) into our
 /// simplified [`Deck`] model. Robust to missing fields.
+///
+/// W5-D: each entry now carries a full `channel: Channel | null` object
+/// alongside `channelId`, so we populate [`DeckEntry::channel`] when present.
 fn deck_from_value(v: Value) -> Deck {
     let id = v
         .get("id")
@@ -662,7 +960,8 @@ fn deck_from_value(v: Value) -> Deck {
         .and_then(|x| x.as_array())
         .map(|arr| {
             arr.iter()
-                .map(|e| {
+                .enumerate()
+                .map(|(i, e)| {
                     let channel_id = e
                         .get("channelId")
                         .or_else(|| e.get("channel_id"))
@@ -670,17 +969,30 @@ fn deck_from_value(v: Value) -> Deck {
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let name = e
-                        .get("name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    Channel {
-                        id: channel_id,
-                        name,
-                        group: None,
-                        logo_url: None,
-                        tvg_id: None,
+                    let position = e
+                        .get("position")
+                        .and_then(|v| v.as_i64())
+                        .map(|n| n as i32)
+                        .unwrap_or(i as i32);
+                    let in_commercial = e
+                        .get("inCommercial")
+                        .or_else(|| e.get("in_commercial"))
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let channel = e
+                        .get("channel")
+                        .and_then(|c| {
+                            if c.is_null() {
+                                None
+                            } else {
+                                serde_json::from_value::<Channel>(c.clone()).ok()
+                            }
+                        });
+                    DeckEntry {
+                        channel_id,
+                        position,
+                        in_commercial,
+                        channel,
                     }
                 })
                 .collect()
