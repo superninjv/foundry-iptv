@@ -71,6 +71,24 @@ dictionary DeckEntry {
     string channel_id;
     i32 position;
     boolean in_commercial;
+    Channel? channel;
+};
+
+dictionary VodStreamSession {
+    string sid;
+    string url;
+    string kind;
+};
+
+dictionary EpgBatchEntry {
+    string channel_id;
+    sequence<EpgEntry> programs;
+};
+
+enum MediaType {
+    "Live",
+    "Vod",
+    "Series",
 };
 
 dictionary Deck {
@@ -103,6 +121,8 @@ dictionary UserSettings {
     string email;
     string? device_label;
     string version;
+    string token_id;
+    string platform;
 };
 
 dictionary WatchHistoryEntry {
@@ -221,6 +241,27 @@ interface ApiClient {
 
     [Throws=ApiError]
     sequence<WatchHistoryEntry> list_watch_history();
+
+    /// Fire-and-forget watch history write. Errors are logged inside
+    /// Rust but never surfaced to Kotlin.
+    void record_watch_history(MediaType media_type, string id, string? display_name);
+
+    // -----------------------------------------------------------------------
+    // VOD / Series playback
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    VodStreamSession start_vod_stream(string stream_id, string? ext);
+
+    [Throws=ApiError]
+    VodStreamSession start_episode_stream(string episode_id, string? ext);
+
+    // -----------------------------------------------------------------------
+    // EPG batch (Guide fan-out)
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    sequence<EpgBatchEntry> get_epg_batch(sequence<string> channel_ids, u32 hours);
 };
 
 // ---------------------------------------------------------------------------
