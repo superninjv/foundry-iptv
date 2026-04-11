@@ -80,6 +80,10 @@ pub struct Deck {
 /// native clients don't need to re-join against a 52K-channel list.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeckEntry {
+    /// Server-side unique entry id (stringified integer). Used by the
+    /// `DELETE /api/decks/<deckId>/entries/<entryId>` endpoint.
+    #[serde(default)]
+    pub entry_id: String,
     pub channel_id: String,
     pub position: i32,
     pub in_commercial: bool,

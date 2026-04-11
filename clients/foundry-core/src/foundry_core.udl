@@ -68,6 +68,7 @@ dictionary SeriesItem {
 };
 
 dictionary DeckEntry {
+    string entry_id;
     string channel_id;
     i32 position;
     boolean in_commercial;
@@ -212,6 +213,24 @@ interface ApiClient {
 
     [Throws=ApiError]
     StreamSession start_deck_stream(string deck_id, u32 entry_index, string? quality);
+
+    [Throws=ApiError]
+    string create_deck(string name);
+
+    [Throws=ApiError]
+    void delete_deck(string deck_id);
+
+    [Throws=ApiError]
+    void rename_deck(string deck_id, string name);
+
+    [Throws=ApiError]
+    void set_deck_skip_commercials(string deck_id, boolean skip);
+
+    [Throws=ApiError]
+    string add_deck_entry(string deck_id, string channel_id);
+
+    [Throws=ApiError]
+    void remove_deck_entry(string deck_id, string entry_id);
 
     // -----------------------------------------------------------------------
     // Lists / favorites

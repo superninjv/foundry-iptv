@@ -229,6 +229,10 @@ impl From<real_models::SeriesItem> for SeriesItem {
 
 #[derive(Debug, Clone)]
 pub struct DeckEntry {
+    /// Server-side entry id (stringified). Used to delete entries via
+    /// `remove_deck_entry`. May be empty for decks that pre-date the
+    /// id-aware parser.
+    pub entry_id: String,
     pub channel_id: String,
     pub position: i32,
     pub in_commercial: bool,
@@ -249,6 +253,7 @@ impl From<real_models::Deck> for Deck {
             .entries
             .into_iter()
             .map(|e| DeckEntry {
+                entry_id: e.entry_id,
                 channel_id: e.channel_id,
                 position: e.position,
                 in_commercial: e.in_commercial,
@@ -636,6 +641,64 @@ impl ApiClient {
             })
             .map_err(ApiError::from)?;
         Ok(session.into())
+    }
+
+    pub fn create_deck(&self, name: String) -> Result<String, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        rt.block_on(async move { real.create_deck(&name).await })
+            .map_err(ApiError::from)
+    }
+
+    pub fn delete_deck(&self, deck_id: String) -> Result<(), ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        rt.block_on(async move { real.delete_deck(&deck_id).await })
+            .map_err(ApiError::from)?;
+        Ok(())
+    }
+
+    pub fn rename_deck(&self, deck_id: String, name: String) -> Result<(), ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        rt.block_on(async move { real.rename_deck(&deck_id, &name).await })
+            .map_err(ApiError::from)?;
+        Ok(())
+    }
+
+    pub fn set_deck_skip_commercials(
+        &self,
+        deck_id: String,
+        skip: bool,
+    ) -> Result<(), ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        rt.block_on(async move { real.set_deck_skip_commercials(&deck_id, skip).await })
+            .map_err(ApiError::from)?;
+        Ok(())
+    }
+
+    pub fn add_deck_entry(
+        &self,
+        deck_id: String,
+        channel_id: String,
+    ) -> Result<String, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        rt.block_on(async move { real.add_deck_entry(&deck_id, &channel_id).await })
+            .map_err(ApiError::from)
+    }
+
+    pub fn remove_deck_entry(
+        &self,
+        deck_id: String,
+        entry_id: String,
+    ) -> Result<(), ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        rt.block_on(async move { real.remove_deck_entry(&deck_id, &entry_id).await })
+            .map_err(ApiError::from)?;
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
