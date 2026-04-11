@@ -768,6 +768,14 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -803,6 +811,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_foundry_core_fn_method_apiclient_get_epg(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`hours`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_foundry_core_fn_method_apiclient_get_epg_batch(`ptr`: Pointer,`channelIds`: RustBuffer.ByValue,`hours`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_foundry_core_fn_method_apiclient_get_series_detail(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_foundry_core_fn_method_apiclient_get_settings(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -831,13 +841,19 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_foundry_core_fn_method_apiclient_list_watch_history(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_foundry_core_fn_method_apiclient_record_watch_history(`ptr`: Pointer,`mediaType`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,`displayName`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_foundry_core_fn_method_apiclient_search(`ptr`: Pointer,`query`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_foundry_core_fn_method_apiclient_set_token(`ptr`: Pointer,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_foundry_core_fn_method_apiclient_start_deck_stream(`ptr`: Pointer,`deckId`: RustBuffer.ByValue,`entryIndex`: Int,`quality`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_foundry_core_fn_method_apiclient_start_episode_stream(`ptr`: Pointer,`episodeId`: RustBuffer.ByValue,`ext`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_foundry_core_fn_method_apiclient_start_stream(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_foundry_core_fn_method_apiclient_start_vod_stream(`ptr`: Pointer,`streamId`: RustBuffer.ByValue,`ext`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_foundry_core_fn_method_apiclient_stop_stream(`ptr`: Pointer,`channelId`: RustBuffer.ByValue,`sid`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -969,6 +985,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_get_epg(
     ): Short
+    fun uniffi_foundry_core_checksum_method_apiclient_get_epg_batch(
+    ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_get_series_detail(
     ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_get_settings(
@@ -997,13 +1015,19 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_list_watch_history(
     ): Short
+    fun uniffi_foundry_core_checksum_method_apiclient_record_watch_history(
+    ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_search(
     ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_set_token(
     ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_start_deck_stream(
     ): Short
+    fun uniffi_foundry_core_checksum_method_apiclient_start_episode_stream(
+    ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_start_stream(
+    ): Short
+    fun uniffi_foundry_core_checksum_method_apiclient_start_vod_stream(
     ): Short
     fun uniffi_foundry_core_checksum_method_apiclient_stop_stream(
     ): Short
@@ -1044,6 +1068,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_foundry_core_checksum_method_apiclient_get_epg() != 16193.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_foundry_core_checksum_method_apiclient_get_epg_batch() != 42537.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_foundry_core_checksum_method_apiclient_get_series_detail() != 22709.toShort()) {
@@ -1088,6 +1115,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_foundry_core_checksum_method_apiclient_list_watch_history() != 35758.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_foundry_core_checksum_method_apiclient_record_watch_history() != 49721.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_foundry_core_checksum_method_apiclient_search() != 32473.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1097,7 +1127,13 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_foundry_core_checksum_method_apiclient_start_deck_stream() != 23301.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_foundry_core_checksum_method_apiclient_start_episode_stream() != 43475.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_foundry_core_checksum_method_apiclient_start_stream() != 58243.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_foundry_core_checksum_method_apiclient_start_vod_stream() != 7640.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_foundry_core_checksum_method_apiclient_stop_stream() != 23935.toShort()) {
@@ -1479,6 +1515,8 @@ public interface ApiClientInterface {
     
     fun `getEpg`(`channelId`: kotlin.String, `hours`: kotlin.UInt): List<EpgEntry>
     
+    fun `getEpgBatch`(`channelIds`: List<kotlin.String>, `hours`: kotlin.UInt): List<EpgBatchEntry>
+    
     fun `getSeriesDetail`(`id`: kotlin.String): kotlin.String
     
     fun `getSettings`(): UserSettings
@@ -1507,6 +1545,12 @@ public interface ApiClientInterface {
     
     fun `listWatchHistory`(): List<WatchHistoryEntry>
     
+    /**
+     * Fire-and-forget watch history write. Errors are logged inside
+     * Rust but never surfaced to Kotlin.
+     */
+    fun `recordWatchHistory`(`mediaType`: MediaType, `id`: kotlin.String, `displayName`: kotlin.String?)
+    
     fun `search`(`query`: kotlin.String): SearchResult
     
     /**
@@ -1516,7 +1560,11 @@ public interface ApiClientInterface {
     
     fun `startDeckStream`(`deckId`: kotlin.String, `entryIndex`: kotlin.UInt, `quality`: kotlin.String?): StreamSession
     
+    fun `startEpisodeStream`(`episodeId`: kotlin.String, `ext`: kotlin.String?): VodStreamSession
+    
     fun `startStream`(`channelId`: kotlin.String): StreamSession
+    
+    fun `startVodStream`(`streamId`: kotlin.String, `ext`: kotlin.String?): VodStreamSession
     
     fun `stopStream`(`channelId`: kotlin.String, `sid`: kotlin.String)
     
@@ -1671,6 +1719,19 @@ open class ApiClient: Disposable, AutoCloseable, ApiClientInterface {
     uniffiRustCallWithError(ApiException) { _status ->
     UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_get_epg(
         it, FfiConverterString.lower(`channelId`),FfiConverterUInt.lower(`hours`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(ApiException::class)override fun `getEpgBatch`(`channelIds`: List<kotlin.String>, `hours`: kotlin.UInt): List<EpgBatchEntry> {
+            return FfiConverterSequenceTypeEpgBatchEntry.lift(
+    callWithPointer {
+    uniffiRustCallWithError(ApiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_get_epg_batch(
+        it, FfiConverterSequenceString.lower(`channelIds`),FfiConverterUInt.lower(`hours`),_status)
 }
     }
     )
@@ -1860,6 +1921,21 @@ open class ApiClient: Disposable, AutoCloseable, ApiClientInterface {
     
 
     
+    /**
+     * Fire-and-forget watch history write. Errors are logged inside
+     * Rust but never surfaced to Kotlin.
+     */override fun `recordWatchHistory`(`mediaType`: MediaType, `id`: kotlin.String, `displayName`: kotlin.String?)
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_record_watch_history(
+        it, FfiConverterTypeMediaType.lower(`mediaType`),FfiConverterString.lower(`id`),FfiConverterOptionalString.lower(`displayName`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(ApiException::class)override fun `search`(`query`: kotlin.String): SearchResult {
             return FfiConverterTypeSearchResult.lift(
     callWithPointer {
@@ -1900,12 +1976,38 @@ open class ApiClient: Disposable, AutoCloseable, ApiClientInterface {
     
 
     
+    @Throws(ApiException::class)override fun `startEpisodeStream`(`episodeId`: kotlin.String, `ext`: kotlin.String?): VodStreamSession {
+            return FfiConverterTypeVodStreamSession.lift(
+    callWithPointer {
+    uniffiRustCallWithError(ApiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_start_episode_stream(
+        it, FfiConverterString.lower(`episodeId`),FfiConverterOptionalString.lower(`ext`),_status)
+}
+    }
+    )
+    }
+    
+
+    
     @Throws(ApiException::class)override fun `startStream`(`channelId`: kotlin.String): StreamSession {
             return FfiConverterTypeStreamSession.lift(
     callWithPointer {
     uniffiRustCallWithError(ApiException) { _status ->
     UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_start_stream(
         it, FfiConverterString.lower(`channelId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(ApiException::class)override fun `startVodStream`(`streamId`: kotlin.String, `ext`: kotlin.String?): VodStreamSession {
+            return FfiConverterTypeVodStreamSession.lift(
+    callWithPointer {
+    uniffiRustCallWithError(ApiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_foundry_core_fn_method_apiclient_start_vod_stream(
+        it, FfiConverterString.lower(`streamId`),FfiConverterOptionalString.lower(`ext`),_status)
 }
     }
     )
@@ -2094,7 +2196,8 @@ public object FfiConverterTypeDeck: FfiConverterRustBuffer<Deck> {
 data class DeckEntry (
     var `channelId`: kotlin.String, 
     var `position`: kotlin.Int, 
-    var `inCommercial`: kotlin.Boolean
+    var `inCommercial`: kotlin.Boolean, 
+    var `channel`: Channel?
 ) {
     
     companion object
@@ -2109,19 +2212,54 @@ public object FfiConverterTypeDeckEntry: FfiConverterRustBuffer<DeckEntry> {
             FfiConverterString.read(buf),
             FfiConverterInt.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterOptionalTypeChannel.read(buf),
         )
     }
 
     override fun allocationSize(value: DeckEntry) = (
             FfiConverterString.allocationSize(value.`channelId`) +
             FfiConverterInt.allocationSize(value.`position`) +
-            FfiConverterBoolean.allocationSize(value.`inCommercial`)
+            FfiConverterBoolean.allocationSize(value.`inCommercial`) +
+            FfiConverterOptionalTypeChannel.allocationSize(value.`channel`)
     )
 
     override fun write(value: DeckEntry, buf: ByteBuffer) {
             FfiConverterString.write(value.`channelId`, buf)
             FfiConverterInt.write(value.`position`, buf)
             FfiConverterBoolean.write(value.`inCommercial`, buf)
+            FfiConverterOptionalTypeChannel.write(value.`channel`, buf)
+    }
+}
+
+
+
+data class EpgBatchEntry (
+    var `channelId`: kotlin.String, 
+    var `programs`: List<EpgEntry>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeEpgBatchEntry: FfiConverterRustBuffer<EpgBatchEntry> {
+    override fun read(buf: ByteBuffer): EpgBatchEntry {
+        return EpgBatchEntry(
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeEpgEntry.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: EpgBatchEntry) = (
+            FfiConverterString.allocationSize(value.`channelId`) +
+            FfiConverterSequenceTypeEpgEntry.allocationSize(value.`programs`)
+    )
+
+    override fun write(value: EpgBatchEntry, buf: ByteBuffer) {
+            FfiConverterString.write(value.`channelId`, buf)
+            FfiConverterSequenceTypeEpgEntry.write(value.`programs`, buf)
     }
 }
 
@@ -2375,7 +2513,9 @@ data class UserSettings (
     var `userId`: kotlin.String, 
     var `email`: kotlin.String, 
     var `deviceLabel`: kotlin.String?, 
-    var `version`: kotlin.String
+    var `version`: kotlin.String, 
+    var `tokenId`: kotlin.String, 
+    var `platform`: kotlin.String
 ) {
     
     companion object
@@ -2391,6 +2531,8 @@ public object FfiConverterTypeUserSettings: FfiConverterRustBuffer<UserSettings>
             FfiConverterString.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
@@ -2398,7 +2540,9 @@ public object FfiConverterTypeUserSettings: FfiConverterRustBuffer<UserSettings>
             FfiConverterString.allocationSize(value.`userId`) +
             FfiConverterString.allocationSize(value.`email`) +
             FfiConverterOptionalString.allocationSize(value.`deviceLabel`) +
-            FfiConverterString.allocationSize(value.`version`)
+            FfiConverterString.allocationSize(value.`version`) +
+            FfiConverterString.allocationSize(value.`tokenId`) +
+            FfiConverterString.allocationSize(value.`platform`)
     )
 
     override fun write(value: UserSettings, buf: ByteBuffer) {
@@ -2406,6 +2550,8 @@ public object FfiConverterTypeUserSettings: FfiConverterRustBuffer<UserSettings>
             FfiConverterString.write(value.`email`, buf)
             FfiConverterOptionalString.write(value.`deviceLabel`, buf)
             FfiConverterString.write(value.`version`, buf)
+            FfiConverterString.write(value.`tokenId`, buf)
+            FfiConverterString.write(value.`platform`, buf)
     }
 }
 
@@ -2454,6 +2600,42 @@ public object FfiConverterTypeVodItem: FfiConverterRustBuffer<VodItem> {
             FfiConverterOptionalString.write(value.`rating`, buf)
             FfiConverterOptionalString.write(value.`categoryId`, buf)
             FfiConverterOptionalString.write(value.`containerExtension`, buf)
+    }
+}
+
+
+
+data class VodStreamSession (
+    var `sid`: kotlin.String, 
+    var `url`: kotlin.String, 
+    var `kind`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeVodStreamSession: FfiConverterRustBuffer<VodStreamSession> {
+    override fun read(buf: ByteBuffer): VodStreamSession {
+        return VodStreamSession(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: VodStreamSession) = (
+            FfiConverterString.allocationSize(value.`sid`) +
+            FfiConverterString.allocationSize(value.`url`) +
+            FfiConverterString.allocationSize(value.`kind`)
+    )
+
+    override fun write(value: VodStreamSession, buf: ByteBuffer) {
+            FfiConverterString.write(value.`sid`, buf)
+            FfiConverterString.write(value.`url`, buf)
+            FfiConverterString.write(value.`kind`, buf)
     }
 }
 
@@ -2626,6 +2808,37 @@ public object FfiConverterTypeAuthError : FfiConverterRustBuffer<AuthException> 
 
 
 
+enum class MediaType {
+    
+    LIVE,
+    VOD,
+    SERIES;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMediaType: FfiConverterRustBuffer<MediaType> {
+    override fun read(buf: ByteBuffer) = try {
+        MediaType.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: MediaType) = 4UL
+
+    override fun write(value: MediaType, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
 /**
  * @suppress
  */
@@ -2683,6 +2896,38 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
         } else {
             buf.put(1)
             FfiConverterString.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeChannel: FfiConverterRustBuffer<Channel?> {
+    override fun read(buf: ByteBuffer): Channel? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeChannel.read(buf)
+    }
+
+    override fun allocationSize(value: Channel?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeChannel.allocationSize(value)
+        }
+    }
+
+    override fun write(value: Channel?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeChannel.write(value, buf)
         }
     }
 }
@@ -2823,6 +3068,34 @@ public object FfiConverterSequenceTypeDeckEntry: FfiConverterRustBuffer<List<Dec
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeDeckEntry.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeEpgBatchEntry: FfiConverterRustBuffer<List<EpgBatchEntry>> {
+    override fun read(buf: ByteBuffer): List<EpgBatchEntry> {
+        val len = buf.getInt()
+        return List<EpgBatchEntry>(len) {
+            FfiConverterTypeEpgBatchEntry.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<EpgBatchEntry>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeEpgBatchEntry.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<EpgBatchEntry>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeEpgBatchEntry.write(it, buf)
         }
     }
 }

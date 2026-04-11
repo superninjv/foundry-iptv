@@ -12,7 +12,7 @@
 
 #![cfg(feature = "uniffi")]
 
-use std::sync::{Arc, Mutex, Once};
+use std::sync::{Arc, Once};
 use tokio::runtime::Runtime;
 
 use crate::api as real_api;
@@ -232,6 +232,8 @@ pub struct DeckEntry {
     pub channel_id: String,
     pub position: i32,
     pub in_commercial: bool,
+    /// Full channel object if the server populated it. W5-D+.
+    pub channel: Option<Channel>,
 }
 
 #[derive(Debug, Clone)]
@@ -246,11 +248,11 @@ impl From<real_models::Deck> for Deck {
         let entries = d
             .entries
             .into_iter()
-            .enumerate()
-            .map(|(i, c)| DeckEntry {
-                channel_id: c.id,
-                position: i as i32,
-                in_commercial: false,
+            .map(|e| DeckEntry {
+                channel_id: e.channel_id,
+                position: e.position,
+                in_commercial: e.in_commercial,
+                channel: e.channel.map(Channel::from),
             })
             .collect();
         Deck {
@@ -324,6 +326,8 @@ pub struct UserSettings {
     pub email: String,
     pub device_label: Option<String>,
     pub version: String,
+    pub token_id: String,
+    pub platform: String,
 }
 
 impl From<real_models::UserSettings> for UserSettings {
@@ -333,6 +337,49 @@ impl From<real_models::UserSettings> for UserSettings {
             email: s.email,
             device_label: s.device_label,
             version: s.version,
+            token_id: s.token_id,
+            platform: s.platform,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct VodStreamSession {
+    pub sid: String,
+    pub url: String,
+    /// One of `"hls"` or `"progressive"`.
+    pub kind: String,
+}
+
+impl From<real_models::VodStreamSession> for VodStreamSession {
+    fn from(v: real_models::VodStreamSession) -> Self {
+        VodStreamSession {
+            sid: v.sid,
+            url: v.url,
+            kind: v.kind,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct EpgBatchEntry {
+    pub channel_id: String,
+    pub programs: Vec<EpgEntry>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum MediaType {
+    Live,
+    Vod,
+    Series,
+}
+
+impl MediaType {
+    fn as_str(self) -> &'static str {
+        match self {
+            MediaType::Live => "live",
+            MediaType::Vod => "vod",
+            MediaType::Series => "series",
         }
     }
 }
@@ -361,7 +408,10 @@ impl From<real_models::WatchHistoryEntry> for WatchHistoryEntry {
 // ---------------------------------------------------------------------------
 
 pub struct ApiClient {
-    inner: Mutex<real_api::ApiClient>,
+    /// Single owned real client — holds ONE `reqwest::Client` for the
+    /// lifetime of this wrapper. HTTPS keepalive / TLS session tickets
+    /// are reused across every FFI call.
+    inner: Arc<real_api::ApiClient>,
     rt: Arc<Runtime>,
 }
 
@@ -371,12 +421,18 @@ impl ApiClient {
     pub fn new(base_url: String) -> Self {
         init_logger();
         log::info!("ApiClient::new base_url={}", base_url);
-        let rt = match tokio::runtime::Builder::new_current_thread()
+        // 4 worker threads — enough for the FireStick's weak SoC while
+        // still letting Compose's Dispatchers.IO issue several
+        // concurrent FFI calls (list_channels + list_categories + EPG
+        // prefetch) without serializing on a single event loop.
+        let rt = match tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
             .enable_all()
+            .thread_name("foundry-core-rt")
             .build()
         {
             Ok(rt) => {
-                log::info!("tokio current-thread runtime created");
+                log::info!("tokio multi-thread runtime created (workers=4)");
                 rt
             }
             Err(e) => {
@@ -385,31 +441,19 @@ impl ApiClient {
             }
         };
         ApiClient {
-            inner: Mutex::new(real_api::ApiClient::new(base_url)),
+            inner: Arc::new(real_api::ApiClient::new(base_url)),
             rt: Arc::new(rt),
         }
     }
 
+    /// Mutates the stored token on the single inner client. Does NOT
+    /// rebuild the `reqwest::Client`.
     pub fn set_token(&self, token: String) {
-        // `with_token` is a builder so we rebuild the inner client. This is
-        // fine — it's just a reqwest::Client behind it and doesn't own any
-        // persistent state.
-        let mut guard = self.inner.lock().unwrap();
-        let base = guard.base_url.clone();
-        *guard = real_api::ApiClient::new(base).with_token(token);
+        self.inner.set_token(token);
     }
 
-    /// Clone the underlying async client so we can move it into a block_on
-    /// future without holding the mutex across an await.
-    fn real(&self) -> real_api::ApiClient {
-        let guard = self.inner.lock().unwrap();
-        let base = guard.base_url.clone();
-        let token = guard.token_for_cleanup();
-        let mut real = real_api::ApiClient::new(base);
-        if let Some(t) = token {
-            real = real.with_token(t);
-        }
-        real
+    fn real(&self) -> Arc<real_api::ApiClient> {
+        self.inner.clone()
     }
 
     // -----------------------------------------------------------------------
@@ -658,6 +702,78 @@ impl ApiClient {
             .block_on(async move { real.list_watch_history().await })
             .map_err(ApiError::from)?;
         Ok(entries.into_iter().map(WatchHistoryEntry::from).collect())
+    }
+
+    /// POST /api/history — record a watch event. Fire-and-forget: errors
+    /// are logged but do not fail the FFI call, matching the web's
+    /// pattern where the player does not block on history writes.
+    pub fn record_watch_history(
+        &self,
+        media_type: MediaType,
+        id: String,
+        _display_name: Option<String>,
+    ) {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let mt = media_type.as_str().to_string();
+        let res = rt.block_on(async move { real.record_watch_history(&mt, &id).await });
+        if let Err(e) = res {
+            log::warn!("record_watch_history failed: {:?}", e);
+        }
+    }
+
+    /// POST /api/stream/vod/<streamId> — start a VOD playback session.
+    pub fn start_vod_stream(
+        &self,
+        stream_id: String,
+        ext: Option<String>,
+    ) -> Result<VodStreamSession, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let session = rt
+            .block_on(async move { real.start_vod_stream(&stream_id, ext.as_deref()).await })
+            .map_err(ApiError::from)?;
+        Ok(session.into())
+    }
+
+    /// POST /api/stream/vod/<episodeId> with type=series — start a
+    /// series episode playback session.
+    pub fn start_episode_stream(
+        &self,
+        episode_id: String,
+        ext: Option<String>,
+    ) -> Result<VodStreamSession, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let session = rt
+            .block_on(async move {
+                real.start_episode_stream(&episode_id, ext.as_deref()).await
+            })
+            .map_err(ApiError::from)?;
+        Ok(session.into())
+    }
+
+    /// Parallel fan-out over GET /api/epg/<id>. Concurrency bounded to
+    /// 16 in-flight requests inside Rust. Returns one entry per input
+    /// channel id in arbitrary order; failed fetches return an empty
+    /// program list so the caller can still render the rest.
+    pub fn get_epg_batch(
+        &self,
+        channel_ids: Vec<String>,
+        hours: u32,
+    ) -> Result<Vec<EpgBatchEntry>, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let results = rt
+            .block_on(async move { real.get_epg_batch(&channel_ids, Some(hours)).await })
+            .map_err(ApiError::from)?;
+        Ok(results
+            .into_iter()
+            .map(|(cid, progs)| EpgBatchEntry {
+                channel_id: cid,
+                programs: progs.into_iter().map(EpgEntry::from).collect(),
+            })
+            .collect())
     }
 }
 
