@@ -6,7 +6,7 @@
 //
 // Generation (run from clients/foundry-core):
 //   cargo run --features uniffi --bin uniffi-bindgen -- generate \
-//       src/foundry-core.udl --language kotlin \
+//       src/foundry_core.udl --language kotlin \
 //       --out-dir ../foundry-android/app/src/main/java/
 
 namespace foundry_core {
@@ -28,14 +28,92 @@ dictionary Channel {
     string? tvg_id;
 };
 
+dictionary Category {
+    string id;
+    string name;
+    u32 channel_count;
+};
+
+dictionary EpgEntry {
+    string channel_id;
+    string start;
+    string end;
+    string title;
+    string? description;
+};
+
 dictionary StreamSession {
     string sid;
     string hls_url;
     string channel_id;
 };
 
+dictionary VodItem {
+    i64 stream_id;
+    string name;
+    string? stream_icon;
+    string? rating;
+    string? category_id;
+    string? container_extension;
+};
+
+dictionary SeriesItem {
+    i64 series_id;
+    string name;
+    string? cover;
+    string? plot;
+    string? genre;
+    string? rating;
+    string? category_id;
+};
+
+dictionary DeckEntry {
+    string channel_id;
+    i32 position;
+    boolean in_commercial;
+};
+
+dictionary Deck {
+    string id;
+    string name;
+    sequence<DeckEntry> entries;
+};
+
+dictionary UserList {
+    string id;
+    string name;
+    string kind;
+    u32 channel_count;
+};
+
+dictionary SearchResult {
+    sequence<Channel> channels;
+    sequence<EpgEntry> programs;
+    sequence<VodItem> vod;
+};
+
+dictionary StartupConfig {
+    string? default_deck_id;
+    string default_view_mode;
+    boolean allow_user_override;
+};
+
+dictionary UserSettings {
+    string user_id;
+    string email;
+    string? device_label;
+    string version;
+};
+
+dictionary WatchHistoryEntry {
+    string channel_id;
+    string started_at;
+    string media_type;
+    i64? vod_stream_id;
+};
+
 // ---------------------------------------------------------------------------
-// ApiClient — minimal surface used by the Kotlin shell today.
+// ApiClient — full surface used by the Kotlin shell.
 // ---------------------------------------------------------------------------
 
 interface ApiClient {
@@ -44,17 +122,105 @@ interface ApiClient {
     /// Store a device bearer token on the client.
     void set_token(string token);
 
-    /// GET /api/channels — returns all live channels.
+    // -----------------------------------------------------------------------
+    // Channels + EPG
+    // -----------------------------------------------------------------------
+
     [Throws=ApiError]
     sequence<Channel> list_channels();
 
-    /// POST /api/stream/<channel_id> — start an HLS session.
+    [Throws=ApiError]
+    sequence<Channel> list_channels_by_category(string category_id);
+
+    [Throws=ApiError]
+    sequence<Category> list_categories();
+
+    [Throws=ApiError]
+    sequence<EpgEntry> get_epg(string channel_id, u32 hours);
+
+    // -----------------------------------------------------------------------
+    // Streaming
+    // -----------------------------------------------------------------------
+
     [Throws=ApiError]
     StreamSession start_stream(string channel_id);
 
-    /// DELETE /api/stream/<channel_id>?sid=<sid>
     [Throws=ApiError]
     void stop_stream(string channel_id, string sid);
+
+    [Throws=ApiError]
+    string change_quality(string sid, string quality);
+
+    // -----------------------------------------------------------------------
+    // VOD / Series
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    sequence<VodItem> list_vod(string? category);
+
+    [Throws=ApiError]
+    string get_vod_detail(string id);
+
+    [Throws=ApiError]
+    sequence<SeriesItem> list_series(string? category);
+
+    [Throws=ApiError]
+    string get_series_detail(string id);
+
+    // -----------------------------------------------------------------------
+    // Decks
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    sequence<Deck> list_decks();
+
+    [Throws=ApiError]
+    Deck get_deck(string id);
+
+    [Throws=ApiError]
+    StreamSession start_deck_stream(string deck_id, u32 entry_index, string? quality);
+
+    // -----------------------------------------------------------------------
+    // Lists / favorites
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    sequence<UserList> list_lists();
+
+    [Throws=ApiError]
+    sequence<Channel> list_list_channels(string list_id);
+
+    [Throws=ApiError]
+    void add_to_list(string list_id, string channel_id);
+
+    [Throws=ApiError]
+    sequence<string> list_favorites();
+
+    [Throws=ApiError]
+    boolean toggle_favorite(string channel_id);
+
+    // -----------------------------------------------------------------------
+    // Search
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    SearchResult search(string query);
+
+    [Throws=ApiError]
+    SearchResult ai_search(string query);
+
+    // -----------------------------------------------------------------------
+    // Settings / history
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    StartupConfig get_startup();
+
+    [Throws=ApiError]
+    UserSettings get_settings();
+
+    [Throws=ApiError]
+    sequence<WatchHistoryEntry> list_watch_history();
 };
 
 // ---------------------------------------------------------------------------
