@@ -29,6 +29,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
 
 /**
@@ -50,6 +51,7 @@ fun PlayerHost(
     onBack: () -> Unit,
     onChannelUp: (() -> Unit)? = null,
     onChannelDown: (() -> Unit)? = null,
+    streamKind: StreamKind = StreamKind.HLS,
 ) {
     val context = LocalContext.current
     val focusRequester = remember { FocusRequester() }
@@ -73,12 +75,17 @@ fun PlayerHost(
 
     // Build ExoPlayer once for this composition, keyed on the URL so switching
     // streams tears down and rebuilds cleanly.
-    val exoPlayer = remember(hlsUrl) {
+    val exoPlayer = remember(hlsUrl, streamKind) {
         ExoPlayer.Builder(context).build().also { player ->
             val dataSourceFactory = DefaultHttpDataSource.Factory()
-            val hlsSource = HlsMediaSource.Factory(dataSourceFactory)
-                .createMediaSource(MediaItem.fromUri(hlsUrl))
-            player.setMediaSource(hlsSource)
+            val mediaItem = MediaItem.fromUri(hlsUrl)
+            val mediaSource = when (streamKind) {
+                StreamKind.HLS ->
+                    HlsMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+                StreamKind.PROGRESSIVE ->
+                    ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+            }
+            player.setMediaSource(mediaSource)
             player.prepare()
             player.playWhenReady = true
         }
