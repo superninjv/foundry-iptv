@@ -1,0 +1,33 @@
+services:
+  ts2hls:
+    build: .
+    container_name: ts2hls
+    restart: unless-stopped
+    network_mode: host
+    read_only: true
+    tmpfs:
+      - /tmp:size=2G
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    user: "1000:1000"
+    environment:
+      # Bearer secret required on /session endpoints. Set in the host env or
+      # an .env file alongside this compose file. Must match the value used
+      # by the Next.js app.
+      - TS2HLS_SHARED_SECRET=${TS2HLS_SHARED_SECRET:?TS2HLS_SHARED_SECRET must be set}
+      - HOST=127.0.0.1
+      # Optional comma-separated allowlist of upstream stream hosts.
+      - STREAM_ALLOWED_HOSTS=${STREAM_ALLOWED_HOSTS:-}
+      # Commercial detection (opt-in). When enabled, a second low-CPU ffmpeg
+      # pass runs per live session and POSTs silence/blackframe signals to
+      # the Next.js app. Off by default.
+      - ENABLE_COMMERCIAL_DETECTION=${ENABLE_COMMERCIAL_DETECTION:-false}
+      - FOUNDRY_API_URL=${FOUNDRY_API_URL:-}
+      - TS2HLS_BEARER_TOKEN=${TS2HLS_BEARER_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3103/health').then(r => process.exit(r.ok ? 0 : 1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
