@@ -43,3 +43,17 @@ export async function destroySession(sid: string): Promise<void> {
     headers: authHeaders(),
   }).catch(() => {});
 }
+
+export async function changeSessionQuality(
+  sid: string,
+  quality: Quality,
+): Promise<{ hlsUrl: string }> {
+  const res = await fetch(`${TS2HLS_URL}/session/${sid}/quality`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ quality }),
+  });
+  if (!res.ok) throw new Error(`ts2hls quality change error: ${res.status}`);
+  const data = await res.json();
+  return { hlsUrl: data.hlsUrl };
+}

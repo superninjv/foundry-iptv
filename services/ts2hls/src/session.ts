@@ -264,6 +264,7 @@ export async function createSession(
     channelUrl,
     channelId,
     quality,
+    mode,
     hlsDir,
     hlsUrl,
     pid: proc.pid!,
@@ -353,6 +354,140 @@ export function destroySession(sid: string): boolean {
 
 export function getSession(sid: string): Session | undefined {
   return sessions.get(sid);
+}
+
+/**
+ * Hot-swap quality for an existing session.
+ *
+ * Strategy: kill+respawn in the SAME directory.
+ * We wait for the old ffmpeg process to fully exit before respawning
+ * so we never have two processes writing to the same segment files
+ * concurrently. The ~300 ms gap is acceptable because the user is in
+ * the middle of a focus gesture when this fires and won't notice the
+ * brief buffer drain — especially since hls.js will keep playing from
+ * its already-buffered segments during the respawn window.
+ *
+ * If the session is already at the requested quality, returns immediately
+ * without touching ffmpeg.
+ */
+export async function changeQuality(sid: string, newQuality: Quality): Promise<{ hlsUrl: string } | null> {
+  const session = sessions.get(sid);
+  if (!session) return null;
+
+  // No-op if already at requested quality
+  if (session.quality === newQuality) {
+    return { hlsUrl: session.hlsUrl };
+  }
+
+  const { channelUrl, channelId, hlsDir, hlsUrl, mode } = session;
+  const shortSid = sid.slice(0, 8);
+
+  // Cancel commercial detection for this session
+  const ac = commercialAborts.get(sid);
+  if (ac) {
+    ac.abort();
+    commercialAborts.delete(sid);
+  }
+
+  // Kill existing ffmpeg process and wait for it to fully exit before
+  // writing new segments to the same directory (avoids mid-write corruption).
+  const proc = processes.get(sid);
+  if (proc && !proc.killed) {
+    await new Promise<void>((resolve) => {
+      proc.once('exit', () => resolve());
+      proc.kill('SIGTERM');
+      // Force-kill after 5s if still alive
+      const killTimer = setTimeout(() => {
+        if (!proc.killed) {
+          console.log(`[session] SIGKILL for ${shortSid} (quality change SIGTERM timeout)`);
+          proc.kill('SIGKILL');
+        }
+      }, SIGKILL_DELAY_MS);
+      killTimer.unref();
+    });
+  }
+  processes.delete(sid);
+
+  // Update the session record with new quality BEFORE spawning so the
+  // session is never in a state where the Map entry is gone.
+  session.quality = newQuality;
+
+  const isVod = mode === 'vod';
+
+  const inputOpts = [
+    '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
+    '-user_agent', 'IPTVSmarters',
+    '-reconnect', '1',
+    '-reconnect_at_eof', '1',
+    '-reconnect_streamed', '1',
+    '-reconnect_on_network_error', '1',
+    '-reconnect_on_http_error', '4xx,5xx',
+    '-reconnect_delay_max', '5',
+    '-analyzeduration', '500000',
+    '-probesize', '500000',
+  ];
+  if (!isVod) {
+    inputOpts.push('-fflags', '+nobuffer+flush_packets');
+  }
+
+  const outputOpts = isVod
+    ? ['-f', 'hls', '-hls_time', '2', '-hls_list_size', '0', '-hls_playlist_type', 'event', '-hls_flags', 'independent_segments+append_list+temp_file', '-hls_segment_type', 'mpegts']
+    : ['-f', 'hls', '-hls_time', '2', '-hls_list_size', '150', '-hls_flags', 'delete_segments+append_list+independent_segments+program_date_time+temp_file', '-hls_segment_type', 'mpegts'];
+
+  const args = [
+    ...inputOpts,
+    '-i', channelUrl,
+    '-map', '0:v:0',
+    ...videoArgs(newQuality),
+    '-map', '0:a:0?',
+    '-c:a', 'aac',
+    '-b:a', '192k',
+    '-ac', '2',
+    ...outputOpts,
+    `${hlsDir}/index.m3u8`,
+  ];
+
+  const newProc = spawn('ffmpeg', args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    shell: false,
+  });
+
+  newProc.stdout?.on('data', (data: Buffer) => {
+    console.log(`[ffmpeg:${shortSid}] ${data.toString().trimEnd()}`);
+  });
+  newProc.stderr?.on('data', (data: Buffer) => {
+    console.log(`[ffmpeg:${shortSid}] ${data.toString().trimEnd()}`);
+  });
+  newProc.on('exit', (code, signal) => {
+    console.log(`[session] ffmpeg exited for ${shortSid} code=${code} signal=${signal}`);
+    processes.delete(sid);
+  });
+
+  session.pid = newProc.pid!;
+  session.lastAccess = Date.now();
+  processes.set(sid, newProc);
+
+  // Re-arm commercial detection if applicable
+  if (
+    process.env.ENABLE_COMMERCIAL_DETECTION === 'true' &&
+    !isVod &&
+    channelId
+  ) {
+    const newAc = new AbortController();
+    commercialAborts.set(sid, newAc);
+    startCommercialDetection({ channelId, inputUrl: channelUrl, signal: newAc.signal });
+  }
+
+  console.log(`[session] ${shortSid} quality → ${newQuality}`);
+
+  // Wait for new playlist to appear before returning
+  try {
+    await waitForFile(join(hlsDir, 'index.m3u8'), 5_000);
+  } catch {
+    console.warn(`[session] ${shortSid} HLS not ready after quality change — client will retry`);
+  }
+
+  return { hlsUrl };
 }
 
 export function touchSession(sid: string): void {
