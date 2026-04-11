@@ -1,6 +1,5 @@
 package com.foundry.iptv.ui.decks
 
-import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,8 +29,8 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import com.foundry.iptv.core.ApiClient
 import com.foundry.iptv.core.Deck
+import com.foundry.iptv.ui.common.ApiClientHolder
 import com.foundry.iptv.ui.focus.KeyboardHandler
 import com.foundry.iptv.ui.focus.firstFocus
 import com.foundry.iptv.ui.focus.rememberFirstFocus
@@ -61,7 +60,7 @@ fun DeckListScreen(
 
     LaunchedEffect(Unit) {
         val result = withContext(Dispatchers.IO) {
-            runCatching { buildDecksApiClient(context).listDecks() }
+            runCatching { ApiClientHolder.get(context).listDecks() }
         }
         result.onSuccess {
             decks = it
@@ -175,15 +174,4 @@ private fun DeckTile(
     }
 }
 
-/**
- * Inline ApiClient factory local to the decks package — keeps our
- * file-ownership boundary clean. See `ui/lists/ListsScreen.kt` for the
- * identical pattern used by the other wave-2 sections.
- */
-internal fun buildDecksApiClient(ctx: Context): ApiClient {
-    val prefs = ctx.getSharedPreferences("foundry_prefs", Context.MODE_PRIVATE)
-    val baseUrl = prefs.getString("server_url", null)
-        ?: error("No server_url in foundry_prefs — device not paired")
-    val token = prefs.getString("device_token", null).orEmpty()
-    return ApiClient(baseUrl).also { it.setToken(token) }
-}
+// ApiClient wiring moved to ui/common/ApiClientHolder.kt (W5-B).

@@ -1,6 +1,5 @@
 package com.foundry.iptv.ui.history
 
-import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,9 +31,11 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import com.foundry.iptv.core.ApiClient
 import com.foundry.iptv.core.Channel
+import com.foundry.iptv.core.MediaType
 import com.foundry.iptv.player.PlayerHost
+import com.foundry.iptv.ui.common.ApiClientHolder
+import com.foundry.iptv.ui.common.WatchTracker
 import com.foundry.iptv.ui.focus.KeyboardHandler
 import com.foundry.iptv.ui.focus.firstFocus
 import com.foundry.iptv.ui.focus.rememberFirstFocus
@@ -69,7 +70,7 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
         loading = true
         val result = withContext(Dispatchers.IO) {
             runCatching {
-                val client = buildApiClient(context)
+                val client = ApiClientHolder.get(context)
                 // Server history is primary. Missing / flaky → empty list.
                 val serverHistory = runCatching { client.listWatchHistory() }.getOrDefault(emptyList())
                 val local = LocalHistoryStore.read(context)
@@ -137,10 +138,11 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
                             HistoryRow(
                                 entry = entry,
                                 onPlay = {
+                                    WatchTracker.recordWatch(scope, context, MediaType.LIVE, entry.channelId, entry.channelName)
                                     scope.launch {
                                         val res = withContext(Dispatchers.IO) {
                                             runCatching {
-                                                buildApiClient(context).startStream(entry.channelId)
+                                                ApiClientHolder.get(context).startStream(entry.channelId)
                                             }
                                         }
                                         res.onSuccess { s ->
@@ -218,14 +220,4 @@ private fun HistoryRow(
     }
 }
 
-/**
- * Inline ApiClient factory — reads pairing prefs and applies the stored token.
- * Duplicated from other wave packages rather than shared, per ownership rules.
- */
-internal fun buildApiClient(ctx: Context): ApiClient {
-    val prefs = ctx.getSharedPreferences("foundry_prefs", Context.MODE_PRIVATE)
-    val baseUrl = prefs.getString("server_url", null)
-        ?: error("No server_url in foundry_prefs — device not paired")
-    val token = prefs.getString("device_token", null).orEmpty()
-    return ApiClient(baseUrl).also { it.setToken(token) }
-}
+// ApiClient wiring moved to ui/common/ApiClientHolder.kt (W5-B).

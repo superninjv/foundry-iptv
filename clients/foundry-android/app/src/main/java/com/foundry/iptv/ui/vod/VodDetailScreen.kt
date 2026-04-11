@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,9 +34,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
-import com.foundry.iptv.core.ApiClient
+import com.foundry.iptv.core.MediaType
+import com.foundry.iptv.player.PlayerHost
+import com.foundry.iptv.ui.common.ApiClientHolder
+import com.foundry.iptv.ui.common.WatchTracker
 import com.foundry.iptv.ui.theme.FoundryColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -105,21 +110,18 @@ fun VodDetailScreen(
     BackHandler(onBack = onBack)
 
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var detail by remember(vodId) { mutableStateOf<VodDetail?>(null) }
     var loading by remember(vodId) { mutableStateOf(true) }
     var errorText by remember(vodId) { mutableStateOf<String?>(null) }
 
+    var playingUrl by remember(vodId) { mutableStateOf<String?>(null) }
+    var playingTitle by remember(vodId) { mutableStateOf<String?>(null) }
+
     LaunchedEffect(vodId) {
-        val creds = readCredentials(context)
-        if (creds == null) {
-            errorText = "No credentials — please re-pair."
-            loading = false
-            return@LaunchedEffect
-        }
         val result = withContext(Dispatchers.IO) {
             runCatching {
-                val client = ApiClient(creds.serverUrl).also { it.setToken(creds.token) }
-                val raw = client.getVodDetail(vodId.toString())
+                val raw = ApiClientHolder.get(context).getVodDetail(vodId.toString())
                 VodDetail.fromJson(raw)
             }
         }
@@ -132,6 +134,19 @@ fun VodDetailScreen(
         }
     }
 
+    // Active playback overlay takes over the full detail surface.
+    if (playingUrl != null) {
+        PlayerHost(
+            hlsUrl = playingUrl!!,
+            channelName = playingTitle ?: "",
+            onBack = {
+                playingUrl = null
+                playingTitle = null
+            },
+        )
+        return
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -140,7 +155,26 @@ fun VodDetailScreen(
         when {
             loading -> CenterMessage("Loading movie…", Color(0xFFAAAAAA))
             errorText != null -> CenterMessage(errorText!!, Color(0xFFFF6666))
-            detail != null -> VodDetailBody(detail!!)
+            detail != null -> VodDetailBody(
+                detail = detail!!,
+                onPlay = { d ->
+                    WatchTracker.recordWatch(scope, context, MediaType.VOD, d.streamId.toString(), d.title)
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching {
+                                ApiClientHolder.get(context)
+                                    .startVodStream(d.streamId.toString(), d.containerExtension)
+                            }
+                        }
+                        result.onSuccess { session ->
+                            playingUrl = session.url
+                            playingTitle = d.title
+                        }.onFailure {
+                            errorText = it.message ?: "VOD playback failed"
+                        }
+                    }
+                },
+            )
             else -> CenterMessage("Not found.", Color(0xFFAAAAAA))
         }
     }
@@ -156,7 +190,7 @@ private fun CenterMessage(text: String, color: Color) {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun VodDetailBody(detail: VodDetail) {
+private fun VodDetailBody(detail: VodDetail, onPlay: (VodDetail) -> Unit) {
     val scroll = rememberScrollState()
     Row(
         modifier = Modifier
@@ -207,14 +241,9 @@ private fun VodDetailBody(detail: VodDetail) {
                 )
             }
             PlayButton(
-                enabled = false,
-                label = "Play (VOD playback not yet wired)",
-                onClick = {
-                    android.util.Log.i(
-                        "VodDetail",
-                        "Play requested for streamId=${detail.streamId} ext=${detail.containerExtension}",
-                    )
-                },
+                enabled = true,
+                label = "Play",
+                onClick = { onPlay(detail) },
             )
         }
     }

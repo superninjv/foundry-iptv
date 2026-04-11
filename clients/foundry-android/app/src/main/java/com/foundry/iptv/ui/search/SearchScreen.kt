@@ -1,6 +1,5 @@
 package com.foundry.iptv.ui.search
 
-import android.content.Context
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,7 +22,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,12 +47,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
-import com.foundry.iptv.core.ApiClient
 import com.foundry.iptv.core.Channel
 import com.foundry.iptv.core.EpgEntry
+import com.foundry.iptv.core.MediaType
 import com.foundry.iptv.core.SearchResult
 import com.foundry.iptv.core.VodItem
 import com.foundry.iptv.player.PlayerHost
+import com.foundry.iptv.ui.common.ApiClientHolder
+import com.foundry.iptv.ui.common.WatchTracker
 import com.foundry.iptv.ui.image.ChannelLogo
 import com.foundry.iptv.ui.theme.FoundryColors
 import kotlinx.coroutines.Dispatchers
@@ -100,12 +100,9 @@ fun SearchScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Lazily build (and keep alive for the lifetime of this screen) one
-    // ApiClient. It's Disposable, so we tear it down on leave.
-    val client = remember { buildApiClient(context) }
-    DisposableEffect(client) {
-        onDispose { runCatching { client?.close() } }
-    }
+    // Shared process-wide ApiClient (see ui/common/ApiClientHolder). We do
+    // NOT close it here — other screens share the same instance.
+    val client = remember { ApiClientHolder.getOrNull(context) }
 
     var query by remember { mutableStateOf("") }
     var aiMode by remember { mutableStateOf(false) }
@@ -231,6 +228,7 @@ fun SearchScreen(modifier: Modifier = Modifier) {
                     results = results!!,
                     filter = filter,
                     onPlayChannel = { ch ->
+                        WatchTracker.recordWatch(scope, context, MediaType.LIVE, ch.id, ch.name)
                         scope.launch {
                             val session = withContext(Dispatchers.IO) {
                                 runCatching { client?.startStream(ch.id) }
@@ -463,17 +461,4 @@ private fun Modifier.clickableOnKey(onClick: () -> Unit): Modifier =
         }
     }
 
-/**
- * Reads server URL + token from foundry_prefs (populated by PairingScreen)
- * and returns a ready-to-call [ApiClient]. Returns null if pairing hasn't
- * completed — the caller renders an empty state in that case.
- *
- * Inlined here (rather than a shared helper) because Wave 2-C only owns
- * the `ui/search/` package per the file-ownership map.
- */
-private fun buildApiClient(context: Context): ApiClient? {
-    val prefs = context.getSharedPreferences("foundry_prefs", Context.MODE_PRIVATE)
-    val baseUrl = prefs.getString("server_url", null) ?: return null
-    val token = prefs.getString("device_token", null) ?: return null
-    return ApiClient(baseUrl).also { it.setToken(token) }
-}
+// ApiClient wiring moved to ui/common/ApiClientHolder.kt (W5-B).

@@ -31,8 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
-import com.foundry.iptv.core.ApiClient
 import com.foundry.iptv.core.SeriesItem
+import com.foundry.iptv.ui.common.ApiClientHolder
 import com.foundry.iptv.ui.theme.FoundryColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -53,17 +53,8 @@ fun SeriesScreen(modifier: Modifier = Modifier) {
     var openId by remember { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(Unit) {
-        val creds = readCredentials(context)
-        if (creds == null) {
-            errorText = "No credentials — please re-pair."
-            loading = false
-            return@LaunchedEffect
-        }
         val result = withContext(Dispatchers.IO) {
-            runCatching {
-                val client = ApiClient(creds.serverUrl).also { it.setToken(creds.token) }
-                client.listSeries(null)
-            }
+            runCatching { ApiClientHolder.get(context).listSeries(null) }
         }
         result.onSuccess {
             items = it
