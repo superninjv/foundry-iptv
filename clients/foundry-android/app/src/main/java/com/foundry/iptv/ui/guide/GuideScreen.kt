@@ -48,6 +48,8 @@ import com.foundry.iptv.core.EpgEntry
 import com.foundry.iptv.core.MediaType
 import com.foundry.iptv.player.PlayerHost
 import com.foundry.iptv.ui.common.ApiClientHolder
+import com.foundry.iptv.ui.common.EmptyLibraryState
+import com.foundry.iptv.ui.common.LibraryStore
 import com.foundry.iptv.ui.common.WatchTracker
 import com.foundry.iptv.ui.theme.FoundryColors
 import kotlinx.coroutines.Dispatchers
@@ -102,18 +104,24 @@ fun GuideScreen(modifier: Modifier = Modifier) {
     // Shared horizontal scroll state for the ruler + every channel row.
     val sharedRowState = rememberLazyListState()
 
-    // Single cold-start fetch: one listChannels() + one batched EPG round-trip
-    // for up to 200 channels. Replaces the old per-row `getEpg()` fan-out that
-    // used to fire ~200 sequential Rust calls on every Guide mount.
+    // Library-scoped EPG: rows are exactly the channels the user has
+    // watched before (typically <50), so no .take(200) cap is needed. One
+    // LibraryStore fetch plus one batched getEpgBatch call covers the whole
+    // grid on mount. Category browse has been removed entirely — discovery
+    // lives in the Search tab.
     LaunchedEffect(Unit) {
-        val result = withContext(Dispatchers.IO) {
-            runCatching {
-                val client = ApiClientHolder.get(context)
-                val chans = client.listChannels().take(200)
-                val batch = client.getEpgBatch(chans.map { it.id }, 24u)
-                val byId = batch.associate { it.channelId to it.programs }
-                chans to byId
+        val result = runCatching {
+            val chans = LibraryStore.getLive(context)
+            val byId = if (chans.isEmpty()) {
+                emptyMap()
+            } else {
+                withContext(Dispatchers.IO) {
+                    ApiClientHolder.get(context)
+                        .getEpgBatch(chans.map { it.id }, 24u)
+                        .associate { it.channelId to it.programs }
+                }
             }
+            chans to byId
         }
         result.onSuccess { (chans, byId) ->
             channels = chans
@@ -161,6 +169,8 @@ fun GuideScreen(modifier: Modifier = Modifier) {
                 fontSize = 18.sp,
                 modifier = Modifier.align(Alignment.Center).padding(32.dp),
             )
+
+            channels.isEmpty() -> EmptyLibraryState()
 
             else -> Column(modifier = Modifier.fillMaxSize()) {
                 TimeRuler(slots = slots, sharedState = sharedRowState)
