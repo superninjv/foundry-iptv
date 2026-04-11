@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -18,11 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
@@ -34,20 +30,20 @@ import com.foundry.iptv.ui.theme.FoundryColors
  * [HubSection] as a pill-shaped button; the selected tab shows the Foundry
  * orange accent, the focused tab gets a brighter border.
  *
- * Focus & input model:
- *   - D-pad Left / Right walks between tabs (built-in focus traversal).
- *   - D-pad Down is intercepted and invokes [onFocusContent] so the parent
- *     hub can move focus into the content pane below.
- *   - Hitting OK on a tab is handled by the parent selecting it; we also
- *     call [onSelect] whenever focus lands on a tab so the content pane
- *     updates as the user scrubs across the rail.
+ * Focus model: purely Compose-native. D-pad Left/Right is handled by
+ * [Modifier.focusable]'s default 2D traversal. D-pad Down/Up is also handled
+ * by default 2D traversal, which walks out of the rail and into the nearest
+ * focusable in the content pane below (and back). **No custom key handling.**
+ * Previous revisions tried to intercept Down via `onPreviewKeyEvent` and
+ * manually `requestFocus()` on a non-focusable content Box — that's where
+ * every focus bug came from. Letting the framework do its job fixes all of
+ * them at once.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun TabRail(
     selected: HubSection,
     onSelect: (HubSection) -> Unit,
-    onFocusContent: () -> Unit,
     modifier: Modifier = Modifier,
     firstTabRequester: FocusRequester? = null,
 ) {
@@ -65,7 +61,6 @@ fun TabRail(
                 section = section,
                 isSelected = section == selected,
                 onFocused = { onSelect(section) },
-                onFocusContent = onFocusContent,
                 modifier = if (isFirst && firstTabRequester != null) {
                     Modifier.focusRequester(firstTabRequester)
                 } else {
@@ -82,16 +77,17 @@ private fun TabChip(
     section: HubSection,
     isSelected: Boolean,
     onFocused: () -> Unit,
-    onFocusContent: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val isFocused by interaction.collectIsFocusedAsState()
 
-    // When focus lands on this chip, mark it as the selected section so the
-    // content pane follows the rail scrubber in real time.
-    if (isFocused) {
-        onFocused()
+    // Propagate focus→select to the hub. LaunchedEffect guarantees this is a
+    // side effect fired exactly once per focus transition, NOT once per
+    // recomposition — the previous implementation called onFocused() from
+    // the composable body, which caused a recomposition storm.
+    LaunchedEffect(isFocused) {
+        if (isFocused) onFocused()
     }
 
     val background = when {
@@ -112,15 +108,7 @@ private fun TabChip(
             .background(background)
             .border(2.dp, borderColor, RoundedCornerShape(24.dp))
             .padding(horizontal = 20.dp, vertical = 10.dp)
-            .focusable(interactionSource = interaction)
-            .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
-                    onFocusContent()
-                    true
-                } else {
-                    false
-                }
-            },
+            .focusable(interactionSource = interaction),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
