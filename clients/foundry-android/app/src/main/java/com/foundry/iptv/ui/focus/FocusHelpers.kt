@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -18,31 +17,28 @@ import androidx.compose.ui.input.key.type
 
 /**
  * Creates and remembers a [FocusRequester] that any composable can attach via
- * [firstFocus]. Combined, they request focus exactly once on first composition.
+ * [firstFocus].
  *
- * Usage:
- * ```
- * val first = rememberFirstFocus()
- * Column {
- *     Item(Modifier.firstFocus(first))
- * }
- * ```
+ * Historically this helper also auto-claimed focus on first composition, but
+ * that stole focus out of the hub's tab rail whenever the user scrubbed past a
+ * tab whose content screen used this helper — the Right-press would move the
+ * rail to Decks/Multiview/etc, the content screen would mount, and the
+ * [firstFocus] auto-claim inside it would yank focus out of the rail mid-scrub.
+ * The hub's `focusRestorer + focusGroup` already handles cascade when the user
+ * explicitly presses D-pad Down, so the auto-claim is redundant and actively
+ * harmful. Callers that legitimately need cold-start focus (Pairing, the hub's
+ * rail itself, the ChannelPicker modal) should call `requester.requestFocus()`
+ * from an explicit `LaunchedEffect(Unit)` instead.
  */
 @Composable
 fun rememberFirstFocus(): FocusRequester = remember { FocusRequester() }
 
 /**
- * Attaches the supplied [FocusRequester] to this modifier chain and requests
- * focus the first time it enters the composition. Safe to no-op if the target
- * is already detached (wrapped in try/catch).
+ * Attach the supplied [FocusRequester] to this modifier chain. Does NOT
+ * auto-claim focus — see [rememberFirstFocus] for the rationale.
  */
-@Composable
-fun Modifier.firstFocus(requester: FocusRequester): Modifier {
-    LaunchedEffect(requester) {
-        runCatching { requester.requestFocus() }
-    }
-    return this.focusRequester(requester)
-}
+fun Modifier.firstFocus(requester: FocusRequester): Modifier =
+    this.focusRequester(requester)
 
 /**
  * Wraps [content] and intercepts the Fire TV / Android TV remote's Back, Menu,

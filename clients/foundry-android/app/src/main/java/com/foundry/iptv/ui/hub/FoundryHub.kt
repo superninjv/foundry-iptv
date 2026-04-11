@@ -68,6 +68,13 @@ fun FoundryHub(
     val railFirstTab = rememberFirstFocus()
     val contentRequester = remember { FocusRequester() }
 
+    // Cold-start: claim focus on the rail's first tab. Previously this was
+    // done by firstFocus()'s auto-claim LaunchedEffect, but that helper was
+    // stealing focus from hub-hosted content screens mid-scrub.
+    LaunchedEffect(Unit) {
+        runCatching { railFirstTab.requestFocus() }
+    }
+
     // Retry the content focus request after Down. We loop a bounded number
     // of times so a slow network fetch doesn't trap focus on the rail
     // forever — after ~600 ms we give up and the user can press Down again.

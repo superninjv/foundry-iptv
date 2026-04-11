@@ -131,6 +131,14 @@ fun ChannelPicker(
     val searchFocus = rememberFirstFocus()
     val firstRow = remember { FocusRequester() }
 
+    // Modal explicitly opened by the user — claim focus on the search field
+    // so they can start typing immediately. firstFocus() no longer auto-claims
+    // (to avoid stealing focus out of the hub rail during tab scrubbing), so
+    // the claim has to be explicit here.
+    LaunchedEffect(Unit) {
+        runCatching { searchFocus.requestFocus() }
+    }
+
     KeyboardHandler(onBack = onDismiss) {
         Box(
             modifier = modifier
