@@ -129,10 +129,13 @@ fun DeckListScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // Matches web `<h1 className="text-2xl font-bold">Superplayer Decks</h1>`
+                    // `src/app/(app)/decks/page.tsx:50-52`.
                     Text(
-                        text = "Your Decks",
+                        text = "Superplayer Decks",
                         color = FoundryColors.OnBackground,
-                        fontSize = 28.sp,
+                        fontSize = 24.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                     )
                     Spacer(Modifier.width(24.dp))
                     HeaderButton(
@@ -158,13 +161,18 @@ fun DeckListScreen(
                         color = Color(0xFFFF6666),
                         fontSize = 16.sp,
                     )
+                    // Matches web: `<p style={color: var(--fg-muted)}>
+                    // No decks yet. Create one above.</p>`
+                    // `src/app/(app)/decks/page.tsx:84-86`.
                     decks.isEmpty() -> Text(
-                        text = "No decks yet. Press \"+ New Deck\" to create one.",
+                        text = "No decks yet. Create one above.",
                         color = FoundryColors.OnSurfaceVariant,
                         fontSize = 16.sp,
                     )
+                    // Web grid: `minmax(280px, 1fr) gap-4`
+                    // `src/app/(app)/decks/page.tsx:88-94`.
                     else -> LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 300.dp),
+                        columns = GridCells.Adaptive(minSize = 280.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier.fillMaxSize(),
@@ -282,6 +290,18 @@ internal fun HeaderButton(
     }
 }
 
+/**
+ * 1:1 port of the web deck tile from `src/app/(app)/decks/page.tsx:96-152`:
+ *   `<div className="flex flex-col gap-3 rounded-lg p-4"
+ *        style={{ backgroundColor: 'var(--bg-raised)',
+ *                 border: '1px solid var(--border)' }}>
+ *      <h2 className="text-lg font-semibold">{d.name}</h2>
+ *      <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
+ *        {count} channels · {relative}
+ *      </p>
+ *      <div className="mt-auto flex gap-2">Open | Delete</div>
+ *    </div>`
+ */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun DeckTile(
@@ -294,21 +314,23 @@ private fun DeckTile(
         modifier = modifier
             .fillMaxWidth()
             .height(160.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(FoundryColors.SurfaceVariant)
+            .clip(RoundedCornerShape(12.dp))
+            .background(FoundryColors.Surface) // var(--bg-raised)
+            .border(1.dp, FoundryColors.Border, RoundedCornerShape(12.dp))
             .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
             text = deck.name,
             color = FoundryColors.OnSurface,
-            fontSize = 22.sp,
+            fontSize = 18.sp, // text-lg
+            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
             maxLines = 1,
         )
-        Spacer(Modifier.height(6.dp))
         Text(
-            text = "${deck.entries.size} ${if (deck.entries.size == 1) "entry" else "entries"}",
+            text = "${deck.entries.size} ${if (deck.entries.size == 1) "channel" else "channels"}",
             color = FoundryColors.OnSurfaceVariant,
-            fontSize = 14.sp,
+            fontSize = 14.sp, // text-sm
         )
         Spacer(Modifier.weight(1f))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

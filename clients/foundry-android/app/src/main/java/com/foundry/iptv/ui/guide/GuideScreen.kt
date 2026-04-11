@@ -211,9 +211,13 @@ fun GuideScreen(modifier: Modifier = Modifier) {
     }
 }
 
-private const val CHANNEL_LABEL_WIDTH_DP = 140
-private const val SLOT_WIDTH_DP = 180
-private const val ROW_HEIGHT_DP = 72
+// Matches web `src/components/guide/TimelineGrid.tsx:17-19`:
+//   ROW_HEIGHT = 64
+//   PIXELS_PER_MINUTE = 200 / 30  (≈ 200dp per 30-min slot)
+//   CHANNEL_COLUMN_WIDTH = 160
+private const val CHANNEL_LABEL_WIDTH_DP = 160
+private const val SLOT_WIDTH_DP = 200
+private const val ROW_HEIGHT_DP = 64
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -222,11 +226,14 @@ private fun TimeRuler(
     sharedState: androidx.compose.foundation.lazy.LazyListState,
 ) {
     val timeFormatter = remember { DateTimeFormatter.ofPattern("h:mm a") }
+    // Matches web ruler bg (`var(--bg-raised)` / FoundryColors.Surface) +
+    // 1dp border-b in var(--border).
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(36.dp)
-            .background(FoundryColors.Surface),
+            .background(FoundryColors.Surface)
+            .border(1.dp, FoundryColors.Border),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -236,11 +243,12 @@ private fun TimeRuler(
                 .padding(start = 12.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
+            // text-xs font-medium var(--fg-muted) — web "Channels" header
             Text(
-                text = "Channel",
+                text = "Channels",
                 color = FoundryColors.OnSurfaceVariant,
                 fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Medium,
             )
         }
         // The ruler uses its own state but seeded from shared — we read but
@@ -289,18 +297,24 @@ private fun ChannelEpgRow(
             .height(ROW_HEIGHT_DP.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Channel column cell — matches web ChannelColumn
+        // (`src/components/guide/ChannelColumn.tsx:27-68`): bg var(--bg-raised),
+        // text-xs font-medium, h-8 w-8 logo would go here (omitted for now
+        // to keep row width stable; existing logo wiring on LibraryChannelCard
+        // covers the card surface elsewhere).
         Box(
             modifier = Modifier
                 .width(CHANNEL_LABEL_WIDTH_DP.dp)
                 .height(ROW_HEIGHT_DP.dp)
+                .background(FoundryColors.Surface)
                 .padding(horizontal = 12.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
             Text(
                 text = channel.name,
                 color = FoundryColors.OnSurface,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
                 maxLines = 2,
             )
         }
@@ -335,6 +349,18 @@ private fun ChannelEpgRow(
     }
 }
 
+/**
+ * 1:1 port of the web `ProgramCell`
+ * (`src/components/guide/ProgramCell.tsx:30-54`):
+ *   `<Link className="absolute top-0.5 flex items-center overflow-hidden
+ *        rounded border px-2 text-xs"
+ *        style={{ backgroundColor: 'var(--bg-raised)',
+ *                 borderColor: 'var(--border)',
+ *                 borderLeftColor: isNowPlaying ? 'var(--accent)' : 'var(--border)',
+ *                 borderLeftWidth: isNowPlaying ? 3 : 1,
+ *                 color: 'var(--fg)' }}>`
+ * Focus: 2dp accent border + var(--hover) background lift. No scale.
+ */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun EpgCell(
@@ -343,20 +369,26 @@ private fun EpgCell(
     onSelect: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val borderColor = if (focused) FoundryColors.Orange else FoundryColors.Border
+    val borderColor = when {
+        focused -> FoundryColors.Orange
+        else -> FoundryColors.Border
+    }
     val bgColor = when {
-        focused -> FoundryColors.SurfaceBright
-        isNow -> FoundryColors.Surface
-        else -> FoundryColors.Background
+        focused -> FoundryColors.SurfaceVariant // var(--hover) #161c26
+        else -> FoundryColors.Surface // var(--bg-raised) #0e1218
     }
     Box(
         modifier = Modifier
             .width(SLOT_WIDTH_DP.dp)
-            .height((ROW_HEIGHT_DP - 8).dp)
-            .clip(RoundedCornerShape(6.dp))
+            .height((ROW_HEIGHT_DP - 4).dp)
+            .clip(RoundedCornerShape(4.dp))
             .background(bgColor)
-            .border(1.dp, borderColor, RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = borderColor,
+                shape = RoundedCornerShape(4.dp),
+            )
+            .padding(horizontal = 8.dp, vertical = 4.dp)
             .onFocusChanged { focused = it.isFocused }
             .focusable()
             .onKeyEvent { ev ->
@@ -372,12 +404,25 @@ private fun EpgCell(
             },
         contentAlignment = Alignment.CenterStart,
     ) {
-        Text(
-            text = title,
-            color = if (isNow) FoundryColors.OnSurface else FoundryColors.OnSurfaceVariant,
-            fontSize = 13.sp,
-            maxLines = 2,
-        )
+        // text-xs var(--fg) with a 3dp accent left-edge strip for the
+        // "now playing" program — mirrors borderLeftWidth/borderLeftColor.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (isNow) {
+                Box(
+                    modifier = Modifier
+                        .width(3.dp)
+                        .height((ROW_HEIGHT_DP - 12).dp)
+                        .background(FoundryColors.Orange),
+                )
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(
+                text = title,
+                color = FoundryColors.OnSurface,
+                fontSize = 12.sp,
+                maxLines = 1,
+            )
+        }
     }
 }
 

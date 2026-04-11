@@ -1,6 +1,5 @@
 package com.foundry.iptv.ui.series
 
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,9 +27,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
@@ -109,42 +108,45 @@ private fun CenterText(text: String, color: Color) {
     }
 }
 
+/**
+ * 1:1 port of the web `MediaGrid.PosterCard`
+ * (`src/components/MediaGrid.tsx:19-70`). See LibraryVodTile for details.
+ */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 internal fun LibrarySeriesTile(series: SeriesItem, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (focused) 1.05f else 1f,
-        label = "seriesTileScale",
-    )
     val borderColor = if (focused) FoundryColors.Orange else FoundryColors.Border
-    val borderWidth = if (focused) 3.dp else 1.dp
-    val bgColor = if (focused) FoundryColors.SurfaceBright else FoundryColors.Surface
+    val borderWidth = if (focused) 2.dp else 1.dp
+    val bgColor = if (focused) FoundryColors.SurfaceVariant else FoundryColors.Surface
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(bgColor)
-            .border(borderWidth, borderColor, RoundedCornerShape(12.dp))
+            .border(borderWidth, borderColor, RoundedCornerShape(16.dp))
             .onFocusChanged { focused = it.isFocused }
             .focusable()
-            .clickable { onClick() }
-            .padding(8.dp),
+            .clickable { onClick() },
     ) {
         SeriesPoster(
             title = series.name,
             url = series.cover,
             modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
         )
-        Text(
-            text = series.name,
-            color = FoundryColors.OnSurface,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(top = 6.dp),
-            maxLines = 2,
-        )
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = series.name,
+                color = FoundryColors.OnSurface,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }

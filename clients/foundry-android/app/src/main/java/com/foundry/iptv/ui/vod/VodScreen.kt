@@ -1,6 +1,5 @@
 package com.foundry.iptv.ui.vod
 
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,9 +27,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
@@ -88,6 +87,9 @@ fun VodScreen(modifier: Modifier = Modifier) {
             loading -> CenterText("Loading…", FoundryColors.OnSurfaceVariant)
             errorText != null -> CenterText(errorText!!, Color(0xFFFF6666))
             items.isEmpty() -> EmptyLibraryState()
+            // Matches web `MediaGrid`: `grid gap-3
+            // gridTemplateColumns: repeat(auto-fill, minmax(160px, 1fr))`
+            // `src/components/MediaGrid.tsx:88-93`.
             else -> LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 160.dp),
                 contentPadding = PaddingValues(24.dp),
@@ -112,32 +114,36 @@ private fun CenterText(text: String, color: Color) {
 }
 
 /**
- * 2:3 poster tile with focus scale + orange border lift, matching the
- * LibraryChannelCard focus language used on the Live grid.
+ * 1:1 port of the web `MediaGrid` `PosterCard`:
+ *   `<Link className="group flex flex-col overflow-hidden rounded-xl border"
+ *        style={{ backgroundColor: 'var(--bg-raised)',
+ *                 borderColor: 'var(--border)' }}>
+ *      <div aspectRatio 2/3 backgroundColor var(--bg)>...</div>
+ *      <div className="flex flex-col gap-1 p-3">
+ *        <p className="line-clamp-2 text-sm font-semibold leading-tight">...</p>
+ *      </div>
+ *    </Link>` — `src/components/MediaGrid.tsx:19-70`.
+ *
+ * Focus: 2dp accent border + subtle background lift. No scale, no shadow —
+ * matches the web's global `*:focus-visible` outline (`globals.css:28`).
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 internal fun LibraryVodTile(vod: VodItem, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (focused) 1.05f else 1f,
-        label = "vodTileScale",
-    )
     val borderColor = if (focused) FoundryColors.Orange else FoundryColors.Border
-    val borderWidth = if (focused) 3.dp else 1.dp
-    val bgColor = if (focused) FoundryColors.SurfaceBright else FoundryColors.Surface
+    val borderWidth = if (focused) 2.dp else 1.dp
+    val bgColor = if (focused) FoundryColors.SurfaceVariant else FoundryColors.Surface
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(bgColor)
-            .border(borderWidth, borderColor, RoundedCornerShape(12.dp))
+            .border(borderWidth, borderColor, RoundedCornerShape(16.dp))
             .onFocusChanged { focused = it.isFocused }
             .focusable()
-            .clickable { onClick() }
-            .padding(8.dp),
+            .clickable { onClick() },
     ) {
         PosterArt(
             title = vod.name,
@@ -146,13 +152,19 @@ internal fun LibraryVodTile(vod: VodItem, onClick: () -> Unit) {
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f),
         )
-        Text(
-            text = vod.name,
-            color = FoundryColors.OnSurface,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(top = 6.dp),
-            maxLines = 2,
-        )
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            // line-clamp-2 + text-sm font-semibold leading-tight
+            Text(
+                text = vod.name,
+                color = FoundryColors.OnSurface,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
