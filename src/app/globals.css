@@ -7,6 +7,10 @@
   --fg-muted: #8893a4;
   --accent: #ff9548;
   --border: #1a1f28;
+  --success: #34d399;
+  --error: #f87171;
+  --hover: #161c26;
+  --focus-ring: rgba(255, 149, 72, 0.5);
 }
 
 html,

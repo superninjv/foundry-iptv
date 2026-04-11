@@ -1,4 +1,7 @@
-import 'dotenv/config';
+import { config as loadEnv } from 'dotenv';
+// Prefer .env.local (Next.js convention), then fall back to .env.
+loadEnv({ path: '.env.local' });
+loadEnv();
 // src/lib/db/migrate.ts
 // Tiny migration runner for foundry-iptv.
 // Reads migrations/*.sql in lexicographic order and applies any not yet in
