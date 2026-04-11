@@ -161,16 +161,14 @@ export async function createSession(
   ];
 
   // Live: prefer low buffering on the input side.
-  // VOD: -re makes ffmpeg read input at native frame rate (1x realtime)
-  // instead of racing ahead at max speed. Without it, the event playlist
-  // grows from 10s to several minutes within seconds of startup, causing
-  // the scrubber duration to jump unpredictably and hls.js to thrash on
-  // new segment notifications. With -re, the playlist grows at playback
-  // speed and the scrubber matches real elapsed time.
+  // VOD: let ffmpeg burst ahead at full speed so the first segment lands
+  // fast. Using -re here broke startup — with 1x input pacing the first
+  // 2s segment takes 2s real-time to emit, hls.js hits the empty initial
+  // playlist and latches onto duration=0. The client-side
+  // maxBufferLength: 30 cap prevents over-downloading regardless of how
+  // fast the event playlist grows.
   if (!isVod) {
     inputOpts.push('-fflags', '+nobuffer+flush_packets');
-  } else {
-    inputOpts.push('-re');
   }
 
   // Output options differ by mode:
@@ -313,28 +311,43 @@ export function destroySession(sid: string): boolean {
     commercialAborts.delete(sid);
   }
 
+  const hlsDir = session.hlsDir;
+  const shortSid = sid.slice(0, 8);
   const proc = processes.get(sid);
+
+  // Defer directory removal until ffmpeg has actually exited. rm'ing the
+  // directory while ffmpeg is mid-write causes "failed to rename ... .tmp"
+  // errors in the ffmpeg log and can corrupt the final segment hls.js is
+  // trying to fetch, surfacing as "Video playback error" on the client.
+  const cleanupDir = () => {
+    try {
+      if (existsSync(hlsDir)) {
+        rmSync(hlsDir, { recursive: true, force: true });
+      }
+    } catch (err) {
+      console.warn(`[session] cleanup ${shortSid} failed:`, (err as Error).message);
+    }
+  };
+
   if (proc && !proc.killed) {
+    proc.once('exit', cleanupDir);
     proc.kill('SIGTERM');
 
     // Force kill after 5s if still alive
     const killTimer = setTimeout(() => {
       if (!proc.killed) {
-        console.log(`[session] SIGKILL for ${sid.slice(0, 8)} (SIGTERM timeout)`);
+        console.log(`[session] SIGKILL for ${shortSid} (SIGTERM timeout)`);
         proc.kill('SIGKILL');
       }
     }, SIGKILL_DELAY_MS);
     killTimer.unref();
-  }
-
-  // Clean up HLS directory
-  if (existsSync(session.hlsDir)) {
-    rmSync(session.hlsDir, { recursive: true, force: true });
+  } else {
+    cleanupDir();
   }
 
   sessions.delete(sid);
   processes.delete(sid);
-  console.log(`[session] destroyed ${sid.slice(0, 8)}`);
+  console.log(`[session] destroyed ${shortSid}`);
   return true;
 }
 
