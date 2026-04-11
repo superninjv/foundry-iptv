@@ -20,8 +20,13 @@ pub struct Category {
 }
 
 /// A single EPG programme entry returned by GET /api/epg/<channelId>.
+///
+/// The server's /api/epg/[id] route does NOT include `channel_id` in each
+/// programme (the channel is known from the URL), so this field is `default`
+/// and gets populated by the Rust caller from the URL context.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EpgEntry {
+    #[serde(default)]
     pub channel_id: String,
     /// Programme start (RFC 3339).
     pub start: chrono::DateTime<chrono::Utc>,

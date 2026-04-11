@@ -452,7 +452,12 @@ impl ApiClient {
         let resp = req.send().await?;
         let resp = Self::check(resp).await?;
         let body: EpgResponse = resp.json().await?;
-        Ok(body.programs)
+        // Server doesn't embed channel_id on each programme — patch it in.
+        let mut programs = body.programs;
+        for p in &mut programs {
+            p.channel_id = channel_id.to_string();
+        }
+        Ok(programs)
     }
 
     /// `POST /api/stream/<channelId>` — start an HLS stream session.
@@ -904,7 +909,12 @@ impl ApiClient {
                     let resp = req.send().await?;
                     let resp = Self::check(resp).await?;
                     let body: EpgResponse = resp.json().await?;
-                    Ok::<_, ApiError>(body.programs)
+                    // Server doesn't embed channel_id on each programme.
+                    let mut programs = body.programs;
+                    for p in &mut programs {
+                        p.channel_id = cid.clone();
+                    }
+                    Ok::<_, ApiError>(programs)
                 }
                 .await;
                 (cid, res)
