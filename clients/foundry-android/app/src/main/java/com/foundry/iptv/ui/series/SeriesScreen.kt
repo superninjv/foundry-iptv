@@ -1,11 +1,14 @@
 package com.foundry.iptv.ui.series
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -32,16 +36,15 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import com.foundry.iptv.core.SeriesItem
-import com.foundry.iptv.ui.common.ApiClientHolder
+import com.foundry.iptv.ui.common.EmptyLibraryState
+import com.foundry.iptv.ui.common.LibraryStore
 import com.foundry.iptv.ui.theme.FoundryColors
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /**
- * Top-level series browsing screen. Loads the full series catalog via the
- * FFI on first composition and renders a virtualized poster grid. Tapping
- * a tile drops into [SeriesDetailScreen] via internal state — no NavHost
- * destination is added, mirroring the pattern in [VodScreen].
+ * Series *library* — only shows the user has watched before. No catalog
+ * browse, no category rail. Sourced from `iptv_watch_history` via
+ * [LibraryStore.getSeries]. Tapping a tile drops into [SeriesDetailScreen]
+ * via internal state.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -53,16 +56,15 @@ fun SeriesScreen(modifier: Modifier = Modifier) {
     var openId by remember { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(Unit) {
-        val result = withContext(Dispatchers.IO) {
-            runCatching { ApiClientHolder.get(context).listSeries(null) }
-        }
-        result.onSuccess {
-            items = it
-            loading = false
-        }.onFailure { e ->
-            errorText = e.message ?: "Failed to load series catalog"
-            loading = false
-        }
+        runCatching { LibraryStore.getSeries(context) }
+            .onSuccess {
+                items = it
+                loading = false
+            }
+            .onFailure { e ->
+                errorText = e.message ?: "Failed to load series library"
+                loading = false
+            }
     }
 
     val active = openId
@@ -81,17 +83,18 @@ fun SeriesScreen(modifier: Modifier = Modifier) {
             .background(FoundryColors.Background),
     ) {
         when {
-            loading -> CenterText("Loading series…", Color(0xFFAAAAAA))
+            loading -> CenterText("Loading…", FoundryColors.OnSurfaceVariant)
             errorText != null -> CenterText(errorText!!, Color(0xFFFF6666))
-            items.isEmpty() -> CenterText("No series available.", Color(0xFFAAAAAA))
+            items.isEmpty() -> EmptyLibraryState()
             else -> LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 160.dp),
-                modifier = Modifier.fillMaxSize().padding(8.dp),
+                contentPadding = PaddingValues(24.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize(),
             ) {
                 items(items, key = { it.seriesId }) { series ->
-                    SeriesTile(series = series, onClick = { openId = series.seriesId })
+                    LibrarySeriesTile(series = series, onClick = { openId = series.seriesId })
                 }
             }
         }
@@ -108,13 +111,23 @@ private fun CenterText(text: String, color: Color) {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun SeriesTile(series: SeriesItem, onClick: () -> Unit) {
+internal fun LibrarySeriesTile(series: SeriesItem, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.05f else 1f,
+        label = "seriesTileScale",
+    )
+    val borderColor = if (focused) FoundryColors.Orange else FoundryColors.Border
+    val borderWidth = if (focused) 3.dp else 1.dp
+    val bgColor = if (focused) FoundryColors.SurfaceBright else FoundryColors.Surface
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (focused) FoundryColors.SurfaceBright else FoundryColors.Surface)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(RoundedCornerShape(12.dp))
+            .background(bgColor)
+            .border(borderWidth, borderColor, RoundedCornerShape(12.dp))
             .onFocusChanged { focused = it.isFocused }
             .focusable()
             .clickable { onClick() }
@@ -128,8 +141,8 @@ private fun SeriesTile(series: SeriesItem, onClick: () -> Unit) {
         Text(
             text = series.name,
             color = FoundryColors.OnSurface,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(top = 6.dp),
             maxLines = 2,
         )
