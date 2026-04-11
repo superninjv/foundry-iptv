@@ -7,11 +7,7 @@ import { query } from '@/lib/db/client';
 import { getRedis } from '@/lib/cache/redis';
 import { getConfig } from '@/lib/config/db';
 
-const VERSION =
-  process.env.NEXT_PUBLIC_GIT_SHA ||
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  (require('../../../../../package.json') as { version: string }).version ||
-  'unknown';
+const VERSION = process.env.NEXT_PUBLIC_GIT_SHA || process.env.npm_package_version || 'dev';
 
 async function checkPostgres(): Promise<boolean> {
   try {
