@@ -569,6 +569,37 @@ impl ApiClient {
     }
 
     // -----------------------------------------------------------------------
+    // Library (watched-only)
+    // -----------------------------------------------------------------------
+
+    pub fn list_library_live(&self) -> Result<Vec<Channel>, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let channels = rt
+            .block_on(async move { real.list_library_live().await })
+            .map_err(ApiError::from)?;
+        Ok(channels.into_iter().map(Channel::from).collect())
+    }
+
+    pub fn list_library_vod(&self) -> Result<Vec<VodItem>, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let vods = rt
+            .block_on(async move { real.list_library_vod().await })
+            .map_err(ApiError::from)?;
+        Ok(vods.into_iter().map(VodItem::from).collect())
+    }
+
+    pub fn list_library_series(&self) -> Result<Vec<SeriesItem>, ApiError> {
+        let rt = self.rt.clone();
+        let real = self.real();
+        let series = rt
+            .block_on(async move { real.list_library_series().await })
+            .map_err(ApiError::from)?;
+        Ok(series.into_iter().map(SeriesItem::from).collect())
+    }
+
+    // -----------------------------------------------------------------------
     // Decks
     // -----------------------------------------------------------------------
 
