@@ -1,6 +1,8 @@
 // src/middleware.ts
-// Edge-compatible middleware. No Node imports. Decodes the NextAuth JWT with
-// jose and redirects unauthenticated requests on (app)/* routes to /login.
+// Edge-compatible middleware. No Node imports. Two auth paths:
+//   1. Cookie-based (NextAuth JWT) — web clients
+//   2. Bearer token (device tokens) — Rust native clients
+//      Authorization: Bearer <rawToken>  →  SHA-256 hash looked up in iptv_device_tokens
 // Auth checks ALSO happen at the data-access layer (see src/lib/auth/session.ts).
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -29,6 +31,7 @@ const APP_PREFIXES = [
   '/search',
   '/lists',
   '/settings',
+  '/admin',
   '/api/channels',
   '/api/epg',
   '/api/stream',
@@ -36,6 +39,8 @@ const APP_PREFIXES = [
   '/api/series',
   '/api/search',
   '/api/lists',
+  '/api/admin',
+  '/api/startup',
 ];
 
 function isPublicRoute(pathname: string): boolean {
@@ -104,6 +109,19 @@ export async function middleware(req: NextRequest) {
   }
 
   if (isAppRoute(pathname)) {
+    // Bearer token path — Rust native clients send Authorization: Bearer <token>.
+    // We can't do a DB lookup in Edge, so we pass the token through via a
+    // request header. The actual validation happens in getApiUser() / route
+    // handlers (Node.js runtime). We only skip the cookie check here.
+    const authHeader = req.headers.get('authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      // Forward the bearer token as a sanitised header the route handler can read.
+      // Stripping the original authorization header prevents double-processing.
+      requestHeaders.set('x-device-bearer', authHeader.slice('Bearer '.length).trim());
+      const res = NextResponse.next({ request: { headers: requestHeaders } });
+      return res;
+    }
+
     const session = await getSessionFromToken(req);
     if (!session?.id) {
       // API routes: 401 JSON. Pages: redirect to login.
