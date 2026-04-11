@@ -13,6 +13,7 @@ import PlayerControls from '@/components/player/PlayerControls';
 import SkipCommercialsToggle from '@/components/decks/SkipCommercialsToggle';
 import { ChannelPicker } from '@/components/multiview/ChannelPicker';
 import type { Deck, DeckViewMode, DeckLayout, DeckEntry } from '@/lib/decks/db';
+import { EditIcon, AddIcon } from '@/components/icons';
 
 interface DeckPlayerProps {
   initialDeck: Deck;
@@ -35,10 +36,7 @@ function EditDeckButton({ onClick }: { onClick: () => void }) {
         color: 'var(--fg)',
       }}
     >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 20h9" />
-        <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4z" />
-      </svg>
+      <EditIcon size={18} />
     </button>
   );
 }
@@ -58,10 +56,7 @@ function AddChannelButton({ onClick }: { onClick: () => void }) {
         border: 'none',
       }}
     >
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="12" y1="5" x2="12" y2="19" />
-        <line x1="5" y1="12" x2="19" y2="12" />
-      </svg>
+      <AddIcon size={20} />
     </button>
   );
 }
@@ -320,10 +315,7 @@ export default function DeckPlayer({ initialDeck, channelNames = {}, onToggleEdi
               minHeight: '48px',
             }}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
+            <AddIcon size={20} />
             Add channel
           </button>
           <button

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { AddIcon } from '@/components/icons';
 
 type Ttl = '12h' | '24h' | '48h' | 'never';
 const TTLS: Ttl[] = ['12h', '24h', '48h', 'never'];
@@ -192,9 +193,7 @@ export default function AddToDeckButton({
               }
         }
       >
-        <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
-          <path d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1z" />
-        </svg>
+        <AddIcon size={18} aria-hidden />
         {variant === 'button' && <span>Deck</span>}
       </button>
 

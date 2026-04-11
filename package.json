@@ -17,6 +17,8 @@
   },
   "dependencies": {
     "@panva/hkdf": "^1.2.1",
+    "@radix-ui/react-tooltip": "^1.2.7",
+    "lucide-react": "^0.511.0",
     "@tanstack/react-virtual": "^3.13.23",
     "bcryptjs": "^3.0.3",
     "fast-xml-parser": "^5.5.11",

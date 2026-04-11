@@ -7,6 +7,7 @@ import { CellControls } from './CellControls';
 import { LayoutPicker } from './LayoutPicker';
 import { ChannelPicker } from './ChannelPicker';
 import { qualityForLayout, type MultiviewLayout } from '@/lib/player/multiview-quality';
+import { AddIcon } from '@/components/icons';
 import type { Quality } from '@/lib/stream/client';
 
 type Layout = MultiviewLayout;
@@ -313,9 +314,7 @@ export function MultiviewGrid({ initialChannelIds, initialLayout, embedded }: Mu
               minHeight: '48px',
             }}
           >
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1z" />
-            </svg>
+            <AddIcon size={20} />
             Add Channels
           </button>
         </div>
@@ -368,9 +367,7 @@ export function MultiviewGrid({ initialChannelIds, initialLayout, embedded }: Mu
               }}
               title="Add channel"
             >
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1z" />
-              </svg>
+              <AddIcon size={20} />
             </button>
           )}
         </div>
@@ -431,9 +428,7 @@ export function MultiviewGrid({ initialChannelIds, initialLayout, embedded }: Mu
                   className="flex flex-col items-center gap-2 rounded-lg p-4 transition-opacity"
                   style={{ color: 'var(--fg-muted)', minHeight: '48px', minWidth: '48px' }}
                 >
-                  <svg width="32" height="32" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1z" />
-                  </svg>
+                  <AddIcon size={32} />
                   <span className="text-xs">Add Channel</span>
                 </button>
               )}
