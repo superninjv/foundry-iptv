@@ -29,12 +29,14 @@ import androidx.tv.material3.Text
 /**
  * Full-screen ExoPlayer composable for HLS playback.
  *
- * Creates an [ExoPlayer] with an HLS media source, begins playback immediately,
- * and cleans up the player instance when the composable leaves composition.
- *
- * @param hlsUrl   Full HLS playlist URL returned by POST /api/stream/<id>.
- * @param onStop   Called when the user requests to stop (Back key or overlay button).
+ * @deprecated W1-D introduced [PlayerHost] as the reusable replacement. This function
+ * remains only because [MainActivity] still imports it; W4-A will migrate callers to
+ * [PlayerHost] and delete this file. Do not add new call sites.
  */
+@Deprecated(
+    message = "Use PlayerHost from W1-D. Will be removed in W4-A.",
+    replaceWith = ReplaceWith("PlayerHost(hlsUrl = hlsUrl, channelName = \"\", onBack = onStop)"),
+)
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun ExoPlayerScreen(
