@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -17,8 +19,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -26,7 +31,8 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Button
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
-import com.foundry.iptv.DeviceAuth
+import com.foundry.iptv.core.exchangePairingCode
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -45,10 +51,45 @@ fun PairingScreen(onPaired: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var serverUrl by remember { mutableStateOf("http://") }
+    var serverUrl by remember { mutableStateOf("http://iptv.foundry.test") }
     var pairingCode by remember { mutableStateOf("") }
     var statusText by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+
+    // Focus requester for the server URL field so the initial focus lands
+    // on a visible input instead of being nowhere. Fire TV remote's D-pad
+    // needs an initial focus target to traverse.
+    val serverUrlFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        try { serverUrlFocus.requestFocus() } catch (_: IllegalStateException) {}
+    }
+
+    // Shared submit handler — called from both the button and the soft
+    // keyboard's "Done" action so the user can pair without navigating
+    // focus all the way down to the button.
+    fun doPair() {
+        if (busy || serverUrl.isBlank() || pairingCode.length < 4) return
+        busy = true
+        statusText = ""
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    exchangePairingCode(
+                        serverUrl.trim(),
+                        pairingCode.trim(),
+                        "Foundry Android",
+                    )
+                }
+            }
+            result.onSuccess { token ->
+                persistCredentials(context, serverUrl.trim(), token)
+                onPaired()
+            }.onFailure { e ->
+                statusText = e.message ?: "Pairing failed"
+                busy = false
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -67,10 +108,15 @@ fun PairingScreen(onPaired: () -> Unit) {
         androidx.compose.material3.OutlinedTextField(
             value = serverUrl,
             onValueChange = { serverUrl = it },
-            placeholder = { androidx.compose.material3.Text("http://192.168.1.x") },
-            modifier = Modifier.fillMaxWidth(0.6f),
+            placeholder = { androidx.compose.material3.Text("http://iptv.foundry.test") },
+            modifier = Modifier
+                .fillMaxWidth(0.6f)
+                .focusRequester(serverUrlFocus),
             singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Uri,
+                imeAction = ImeAction.Next,
+            ),
             enabled = !busy,
         )
 
@@ -81,38 +127,24 @@ fun PairingScreen(onPaired: () -> Unit) {
         androidx.compose.material3.OutlinedTextField(
             value = pairingCode,
             onValueChange = { pairingCode = it.uppercase() },
-            placeholder = { androidx.compose.material3.Text("XXXXXX") },
+            placeholder = { androidx.compose.material3.Text("XXXX-XXXX") },
             modifier = Modifier.fillMaxWidth(0.6f),
             singleLine = true,
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Characters,
+                imeAction = ImeAction.Done,
+            ),
+            // Pressing OK/Done on the Fire TV soft keyboard submits without
+            // needing to reach the Pair button via D-pad. This is the whole
+            // reason the original screen was unusable on a TV remote.
+            keyboardActions = KeyboardActions(onDone = { doPair() }),
             enabled = !busy,
         )
 
         Spacer(modifier = Modifier.height(32.dp))
 
         Button(
-            onClick = {
-                busy = true
-                statusText = ""
-                scope.launch {
-                    val result = withContext(Dispatchers.IO) {
-                        runCatching {
-                            DeviceAuth.exchangePairingCode(
-                                serverUrl.trim(),
-                                pairingCode.trim(),
-                                "Foundry Android",
-                            )
-                        }
-                    }
-                    result.onSuccess { token ->
-                        persistCredentials(context, serverUrl.trim(), token)
-                        onPaired()
-                    }.onFailure { e ->
-                        statusText = e.message ?: "Pairing failed"
-                        busy = false
-                    }
-                }
-            },
+            onClick = { doPair() },
             enabled = !busy && serverUrl.isNotBlank() && pairingCode.length >= 4,
         ) {
             Text(text = if (busy) "Pairing…" else "Pair Device")

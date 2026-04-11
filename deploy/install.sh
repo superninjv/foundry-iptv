@@ -53,7 +53,12 @@ check_ubuntu() {
 install_deps() {
   info "Installing system dependencies…"
   $SUDO apt-get update -qq
-  $SUDO apt-get install -y -qq docker.io docker-compose-plugin curl git openssl
+  # android-tools-adb is required by the Device Setup Wizard to push the
+  # Android client APK to FireSticks and similar devices directly from the
+  # admin UI. Without it, customers would have to sideload the APK manually.
+  $SUDO apt-get install -y -qq \
+    docker.io docker-compose-plugin curl git openssl \
+    android-tools-adb
   $SUDO systemctl enable --now docker
   # Add current user to docker group so compose commands work without sudo.
   if [ "$(id -u)" -ne 0 ]; then

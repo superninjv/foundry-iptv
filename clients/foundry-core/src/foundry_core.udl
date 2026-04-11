@@ -1,0 +1,79 @@
+// Foundry IPTV — UniFFI interface for the Kotlin Android shell.
+//
+// This UDL is the authoritative contract between foundry-core and the
+// uniffi-generated FoundryCore.kt. Every type and method declared here
+// must have a matching Rust impl in `src/ffi.rs`.
+//
+// Generation (run from clients/foundry-core):
+//   cargo run --features uniffi --bin uniffi-bindgen -- generate \
+//       src/foundry-core.udl --language kotlin \
+//       --out-dir ../foundry-android/app/src/main/java/
+
+namespace foundry_core {
+    /// Exchange a short-lived pairing code (from /admin/devices) for a
+    /// long-lived bearer token. Blocking — call from a background thread.
+    [Throws=AuthError]
+    string exchange_pairing_code(string base_url, string code, string label);
+};
+
+// ---------------------------------------------------------------------------
+// Data types
+// ---------------------------------------------------------------------------
+
+dictionary Channel {
+    string id;
+    string name;
+    string? group;
+    string? logo_url;
+    string? tvg_id;
+};
+
+dictionary StreamSession {
+    string sid;
+    string hls_url;
+    string channel_id;
+};
+
+// ---------------------------------------------------------------------------
+// ApiClient — minimal surface used by the Kotlin shell today.
+// ---------------------------------------------------------------------------
+
+interface ApiClient {
+    constructor(string base_url);
+
+    /// Store a device bearer token on the client.
+    void set_token(string token);
+
+    /// GET /api/channels — returns all live channels.
+    [Throws=ApiError]
+    sequence<Channel> list_channels();
+
+    /// POST /api/stream/<channel_id> — start an HLS session.
+    [Throws=ApiError]
+    StreamSession start_stream(string channel_id);
+
+    /// DELETE /api/stream/<channel_id>?sid=<sid>
+    [Throws=ApiError]
+    void stop_stream(string channel_id, string sid);
+};
+
+// ---------------------------------------------------------------------------
+// Errors — flat variants (uniffi 0.28 supports both flat and dict errors; we
+// use flat + carry detail in the Display impl that uniffi surfaces to Kotlin).
+// ---------------------------------------------------------------------------
+
+[Error]
+enum ApiError {
+    "Unauthenticated",
+    "Network",
+    "Server",
+    "Json",
+    "Other",
+};
+
+[Error]
+enum AuthError {
+    "Network",
+    "Rejected",
+    "Parse",
+};

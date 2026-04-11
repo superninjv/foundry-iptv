@@ -27,7 +27,10 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0
 
 RUN addgroup -S foundry && adduser -S -G foundry foundry \
-    && apk add --no-cache curl
+    && apk add --no-cache curl android-tools
+# android-tools provides adb — required by the Device Setup Wizard so the
+# admin can push the client APK to FireSticks and other Android TV devices
+# directly from the browser, without the customer ever touching a terminal.
 
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static

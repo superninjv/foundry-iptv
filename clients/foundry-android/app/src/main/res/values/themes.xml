@@ -5,7 +5,7 @@
         The Compose TV content overrides the visual style at runtime, but the
         manifest still needs a Leanback theme to pass the Play Store TV review.
     -->
-    <style name="Theme.FoundryIptv" parent="@style/Theme.AppCompat.Leanback">
+    <style name="Theme.FoundryIptv" parent="@style/Theme.AppCompat.NoActionBar">
         <item name="android:windowBackground">@android:color/black</item>
         <item name="android:colorPrimary">#1A6EB5</item>
         <item name="android:colorAccent">#1A6EB5</item>

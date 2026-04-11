@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "com.foundry.iptv"
-        minSdk = 22          // Fire TV Stick 4K (API 22+)
+        minSdk = 23          // Fire TV Stick 4K (API 23+; tv-foundation requires API 23)
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
@@ -45,9 +45,8 @@ android {
         jvmTarget = "17"
     }
 
-    // Location of the cross-compiled foundry-core .so files.
-    // Uncomment and adjust once the Rust crate is built for Android targets.
-    // sourceSets["main"].jniLibs.srcDirs("../jniLibs")
+    // Cross-compiled foundry-core .so files live under app/src/main/jniLibs/<abi>/
+    // (the Android Gradle Plugin's default location), so no override needed here.
 }
 
 dependencies {
@@ -55,7 +54,7 @@ dependencies {
     implementation(composeBom)
 
     // Jetpack Compose TV (pinned as per spec)
-    implementation("androidx.tv:tv-foundation:1.0.0")
+    implementation("androidx.tv:tv-foundation:1.0.0-rc01")
     implementation("androidx.tv:tv-material:1.0.0")
     implementation("androidx.compose.ui:ui:1.7.5")
     implementation("androidx.compose.ui:ui-tooling-preview:1.7.5")
@@ -78,8 +77,12 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
-    // TODO: uncomment when foundry-core uniffi bindings are generated
-    // implementation(fileTree(mapOf("dir" to "../jniLibs/jar", "include" to listOf("*.jar"))))
+    // AppCompat — provides Theme.AppCompat.Leanback required by the manifest theme.
+    implementation("androidx.appcompat:appcompat:1.7.0")
+
+    // JNA — uniffi-generated Kotlin bindings use JNA for the native FFI shim.
+    // Use the "@aar" variant so AGP unpacks the Android-specific .so bundle.
+    implementation("net.java.dev.jna:jna:5.14.0@aar")
 
     debugImplementation("androidx.compose.ui:ui-tooling:1.7.5")
 }

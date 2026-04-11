@@ -30,7 +30,10 @@ export async function POST(req: NextRequest) {
   const platform = (body.platform ?? 'unknown').trim();
 
   const code = randomCode();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min TTL
+  // 24-hour TTL. The code is still single-use (consumed_at marks it spent),
+  // but the admin shouldn't be racing a stopwatch when setting up a device
+  // that takes several minutes to boot/install.
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
   await query(
     `INSERT INTO iptv_device_pairing_codes (code, created_by, label, platform, expires_at)
