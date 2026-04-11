@@ -204,6 +204,7 @@ export default function AppShell({
                 <Tooltip key={`${item.href}-${item.label}`} label={item.label} side="right">
                   <Link
                     href={item.href}
+                    prefetch={false}
                     data-nav-item
                     tabIndex={0}
                     className="foundry-nav-item flex items-center justify-center rounded-lg py-3"
@@ -246,6 +247,7 @@ export default function AppShell({
               <Link
                 key={`${item.href}-${item.label}`}
                 href={item.href}
+                prefetch={false}
                 className="flex flex-1 flex-col items-center gap-1 py-3"
                 style={{
                   color: active ? 'var(--accent)' : 'var(--fg-muted)',

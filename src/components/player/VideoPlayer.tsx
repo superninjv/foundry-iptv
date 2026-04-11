@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import Hls from 'hls.js';
+import { pickHlsConfig } from './hls-config';
 
 interface VideoPlayerProps {
   hlsUrl: string;
@@ -62,28 +63,31 @@ const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(function Vide
     // "live edge" of the event playlist, which for VOD means the encoder's
     // head position — causing it to stall waiting for segments that haven't
     // been written yet and show very slow playback progress.
+    //
+    // Platform-specific buffer limits are provided by pickHlsConfig() from
+    // hls-config.ts — Fire TV Silk gets tighter limits to stay within its
+    // ~100-200 MB MSE budget; desktop gets relaxed values.
+    const platformConfig = pickHlsConfig();
     const hls = isLive
       ? new Hls({
-          enableWorker: true,
+          ...platformConfig,
           lowLatencyMode: false,
-          liveSyncDurationCount: 3,
-          liveMaxLatencyDurationCount: 150,
-          backBufferLength: 300,
+          liveSyncDurationCount: platformConfig.liveSyncDurationCount ?? 3,
+          liveMaxLatencyDurationCount: platformConfig.liveMaxLatencyDurationCount ?? 10,
           liveDurationInfinity: true,
         })
       : new Hls({
-          enableWorker: true,
+          ...platformConfig,
           lowLatencyMode: false,
           // Start at the beginning, not at the current encoder head.
           startPosition: 0,
-          backBufferLength: 300,
+          liveDurationInfinity: false,
           // Cap forward prefetch. Without these, ffmpeg (running -c:v copy
           // without -re) races ahead and hls.js greedily downloads every
           // segment the event playlist exposes, causing a visible stall as
           // the buffer suddenly jumps from 10s to 5+ minutes.
           maxBufferLength: 30,
           maxMaxBufferLength: 60,
-          maxBufferSize: 60 * 1000 * 1000,
         });
 
     hlsRef.current = hls;

@@ -8,5 +8,9 @@ export async function GET() {
   if (!user) return unauthorized();
 
   const categories = await getCategories();
-  return NextResponse.json({ categories });
+  return NextResponse.json({ categories }, {
+    headers: {
+      'Cache-Control': 'private, max-age=30, stale-while-revalidate=300',
+    },
+  });
 }
