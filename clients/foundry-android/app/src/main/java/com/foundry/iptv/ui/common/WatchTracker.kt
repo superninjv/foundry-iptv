@@ -34,6 +34,11 @@ object WatchTracker {
             runCatching {
                 ApiClientHolder.getOrNull(context)
                     ?.recordWatchHistory(kind, id, displayName)
+            }.onSuccess {
+                // Library just gained a new entry; drop the Kotlin-side burst
+                // cache so the next tab visit refetches. The Rust 5 s TTL still
+                // dedupes rapid churn underneath.
+                LibraryStore.invalidate()
             }.onFailure { Log.w(TAG, "recordWatch($kind,$id) failed: ${it.message}") }
         }
     }
