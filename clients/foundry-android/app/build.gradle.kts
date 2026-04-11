@@ -74,6 +74,12 @@ dependencies {
 
     // Networking
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Coil 3 — remote image loader used by ChannelLogo / VOD posters / series art.
+    // network-okhttp pulls in the OkHttp-backed fetcher so we reuse the same HTTP
+    // stack that the rest of the app already ships.
+    implementation("io.coil-kt.coil3:coil-compose:3.0.4")
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.0.4")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
