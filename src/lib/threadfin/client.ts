@@ -20,8 +20,22 @@ import type { IncomingMessage } from 'node:http';
 import type { Channel, EpgProgram, NowNext } from './types';
 
 const THREADFIN_URL = process.env.THREADFIN_URL || 'http://threadfin.foundry.test';
-const RAW_M3U_URL =
-  process.env.RAW_M3U_URL || `${THREADFIN_URL}/raw/prime.m3u`;
+
+// RAW_M3U_URL is resolved lazily so we can prefer a DB-backed config value
+// over the environment variable without making module load async.
+let _resolvedM3uUrl: string | null = null;
+
+async function getM3uUrl(): Promise<string> {
+  if (_resolvedM3uUrl) return _resolvedM3uUrl;
+  try {
+    const { getConfigOrEnv } = await import('@/lib/config/db');
+    const url = await getConfigOrEnv('m3u_url', 'RAW_M3U_URL');
+    _resolvedM3uUrl = url ?? `${THREADFIN_URL}/raw/prime.m3u`;
+  } catch {
+    _resolvedM3uUrl = process.env.RAW_M3U_URL ?? `${THREADFIN_URL}/raw/prime.m3u`;
+  }
+  return _resolvedM3uUrl;
+}
 
 // Persist caches across Next.js dev-mode hot reloads via globalThis. The
 // inflight promise is also stored here so concurrent listChannels() calls
@@ -117,6 +131,9 @@ function rawHttpGet(urlStr: string): Promise<IncomingMessage> {
 }
 
 async function fetchChannelsFromRawM3u(): Promise<Channel[]> {
+  const RAW_M3U_URL = await getM3uUrl();
+  // Reset resolved URL so next invocation re-checks the DB (in case admin changed it)
+  _resolvedM3uUrl = null;
   console.log(`[channels] streaming raw M3U from ${RAW_M3U_URL}`);
   let stream: IncomingMessage;
   try {
