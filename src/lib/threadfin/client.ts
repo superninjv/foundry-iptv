@@ -294,6 +294,25 @@ export async function getCategories(): Promise<string[]> {
   return Array.from(groups).sort();
 }
 
+/**
+ * List unique category names with channel counts. Derived from the cached
+ * channel list (same source as `getCategories()` — no extra fetch).
+ *
+ * Used by the native FireStick client so category badges can render without a
+ * follow-up round-trip.
+ */
+export async function getCategoriesWithCounts(): Promise<Array<{ name: string; count: number }>> {
+  const channels = await listChannels();
+  const counts = new Map<string, number>();
+  for (const ch of channels) {
+    if (!ch.group) continue;
+    counts.set(ch.group, (counts.get(ch.group) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 // ---------------------------------------------------------------------------
 // EPG — read from Postgres cache (populated by scripts/ingest-epg.ts)
 // ---------------------------------------------------------------------------
