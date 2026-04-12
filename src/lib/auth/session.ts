@@ -81,9 +81,31 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   };
 }
 
+/**
+ * Cookie session OR x-device-bearer header. Used by both Server Components
+ * ([requireAuth]) and API route handlers ([getApiUser]) so the native
+ * WebView client, which authenticates via a device bearer token stamped by
+ * middleware, can render Server Component pages without a NextAuth cookie.
+ */
+async function getCurrentUserOrBearer(): Promise<SessionUser | null> {
+  const cookieUser = await getCurrentUser();
+  if (cookieUser) return cookieUser;
+
+  try {
+    const headersList = await headers();
+    const rawToken = headersList.get('x-device-bearer');
+    if (rawToken) {
+      return getUserFromBearerToken(rawToken);
+    }
+  } catch {
+    // headers() not available outside request scope — ignore
+  }
+  return null;
+}
+
 /** Require auth; redirect to /login if unauthenticated. Use in Server Components. */
 export async function requireAuth(): Promise<SessionUser> {
-  const user = await getCurrentUser();
+  const user = await getCurrentUserOrBearer();
   if (!user) redirect('/login');
   return user;
 }
@@ -97,23 +119,7 @@ export async function requireAdmin(): Promise<SessionUser> {
 
 /** For API routes: checks cookie session first, then device bearer token. */
 export async function getApiUser(): Promise<SessionUser | null> {
-  // Try cookie-based session first (web clients)
-  const cookieUser = await getCurrentUser();
-  if (cookieUser) return cookieUser;
-
-  // Try device bearer token (Rust native clients)
-  // The middleware sets x-device-bearer from the Authorization: Bearer header
-  try {
-    const headersList = await headers();
-    const rawToken = headersList.get('x-device-bearer');
-    if (rawToken) {
-      return getUserFromBearerToken(rawToken);
-    }
-  } catch {
-    // headers() not available outside route handlers — ignore
-  }
-
-  return null;
+  return getCurrentUserOrBearer();
 }
 
 export function unauthorized(message = 'Authentication required') {

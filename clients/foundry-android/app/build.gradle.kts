@@ -86,6 +86,12 @@ dependencies {
     // AppCompat — provides Theme.AppCompat.Leanback required by the manifest theme.
     implementation("androidx.appcompat:appcompat:1.7.0")
 
+    // Required by Amazon WebView (Fire TV) for device-posture detection.
+    // Without this, loadUrl() throws NoClassDefFoundError for
+    // androidx.window.extensions.core.util.function.Consumer and the app
+    // crashes on first navigation.
+    implementation("androidx.window:window:1.3.0")
+
     // JNA — uniffi-generated Kotlin bindings use JNA for the native FFI shim.
     // Use the "@aar" variant so AGP unpacks the Android-specific .so bundle.
     implementation("net.java.dev.jna:jna:5.14.0@aar")

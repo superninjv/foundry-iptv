@@ -4,37 +4,25 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.foundry.iptv.ui.PairingScreen
-import com.foundry.iptv.ui.decks.DeckListScreen
-import com.foundry.iptv.ui.guide.GuideScreen
-import com.foundry.iptv.ui.hub.FoundryHub
-import com.foundry.iptv.ui.hub.HubSection
-import com.foundry.iptv.ui.live.LiveScreen
-import com.foundry.iptv.ui.multiview.MultiviewScreen
-import com.foundry.iptv.ui.search.SearchScreen
-import com.foundry.iptv.ui.series.SeriesScreen
-import com.foundry.iptv.ui.settings.SettingsScreen
+import com.foundry.iptv.ui.WebViewScreen
 import com.foundry.iptv.ui.theme.FoundryTheme
-import com.foundry.iptv.ui.vod.VodScreen
 
 /**
  * Root navigation destinations.
  *
- * The hub is the new default post-pairing surface. The old flat
- * CHANNEL_LIST / NOW_PLAYING destinations have been removed — channel
- * browsing and playback now live inside the hub's Live tab and its own
- * PlayerHost, which later waves wire up.
+ * Two-destination NavHost: a native Pairing screen (first-run flow that
+ * exchanges a short-lived code for a long-lived device bearer token) and
+ * a fullscreen embedded WebView that renders the Foundry IPTV web app at
+ * the stored server URL. After pairing, the user never sees anything
+ * Compose again — the WebView is the entire UI.
  */
 object Destinations {
     const val PAIRING = "pairing"
-    const val HUB = "hub"
+    const val WEB = "web"
 }
 
 class MainActivity : ComponentActivity() {
@@ -42,10 +30,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Gate the first-run pairing flow on a persisted device token.
         val prefs = getSharedPreferences("foundry_prefs", MODE_PRIVATE)
         val hasToken = prefs.getString("device_token", null) != null
-        val startDest = if (hasToken) Destinations.HUB else Destinations.PAIRING
+        val startDest = if (hasToken) Destinations.WEB else Destinations.PAIRING
 
         setContent {
             FoundryApp(startDestination = startDest)
@@ -63,39 +50,34 @@ fun FoundryApp(startDestination: String) {
             composable(Destinations.PAIRING) {
                 PairingScreen(
                     onPaired = {
-                        navController.navigate(Destinations.HUB) {
+                        navController.navigate(Destinations.WEB) {
                             popUpTo(Destinations.PAIRING) { inclusive = true }
                         }
                     },
                 )
             }
 
-            composable(Destinations.HUB) {
-                FoundryHub(
-                    sectionContent = { section, mod ->
-                        when (section) {
-                            HubSection.Live -> LiveScreen(modifier = mod)
-                            HubSection.Guide -> GuideScreen(modifier = mod)
-                            HubSection.Vod -> VodScreen(modifier = mod)
-                            HubSection.Series -> SeriesScreen(modifier = mod)
-                            HubSection.Decks -> DeckListScreen(modifier = mod)
-                            HubSection.Multiview -> MultiviewScreen(modifier = mod)
-                            HubSection.Search -> SearchScreen(modifier = mod)
-                            HubSection.Settings -> SettingsScreen(
-                                modifier = mod,
-                                onUnpair = {
-                                    // SettingsScreen already cleared device_token
-                                    // + server_url from foundry_prefs before calling
-                                    // this callback. Pop the hub and land back on
-                                    // pairing as the new start destination.
-                                    navController.navigate(Destinations.PAIRING) {
-                                        popUpTo(Destinations.HUB) { inclusive = true }
-                                    }
-                                },
-                            )
+            composable(Destinations.WEB) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val prefs = context.applicationContext
+                    .getSharedPreferences("foundry_prefs", android.content.Context.MODE_PRIVATE)
+                val serverUrl = prefs.getString("server_url", null)
+                val deviceToken = prefs.getString("device_token", null)
+
+                if (serverUrl.isNullOrBlank() || deviceToken.isNullOrBlank()) {
+                    // Creds got cleared between composition and navigation.
+                    // Bounce back to pairing.
+                    androidx.compose.runtime.LaunchedEffect(Unit) {
+                        navController.navigate(Destinations.PAIRING) {
+                            popUpTo(Destinations.WEB) { inclusive = true }
                         }
-                    },
-                )
+                    }
+                } else {
+                    WebViewScreen(
+                        serverUrl = serverUrl,
+                        deviceToken = deviceToken,
+                    )
+                }
             }
         }
     }
