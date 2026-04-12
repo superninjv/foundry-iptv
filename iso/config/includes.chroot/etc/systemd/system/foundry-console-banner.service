@@ -1,0 +1,15 @@
+[Unit]
+Description=Foundry IPTV Console Banner
+After=foundry.service multi-user.target
+Wants=foundry.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/foundry-console-banner
+Restart=always
+RestartSec=10
+StandardOutput=tty
+TTYPath=/dev/tty1
+
+[Install]
+WantedBy=multi-user.target

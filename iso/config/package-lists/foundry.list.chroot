@@ -1,0 +1,24 @@
+# Docker (installed via hook that adds Docker apt repo)
+docker-ce
+docker-ce-cli
+containerd.io
+docker-compose-plugin
+
+# Networking
+avahi-daemon
+libnss-mdns
+openssh-server
+curl
+iptables
+net-tools
+
+# Compression (for loading baked images)
+zstd
+
+# System
+openssl
+systemd-timesyncd
+sudo
+htop
+lsof
+rsync

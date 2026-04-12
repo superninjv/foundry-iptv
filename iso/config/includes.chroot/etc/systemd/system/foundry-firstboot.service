@@ -1,0 +1,16 @@
+[Unit]
+Description=Foundry IPTV First Boot Setup
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+ConditionPathExists=!/opt/foundry/.firstboot-done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/foundry-firstboot
+RemainAfterExit=yes
+TimeoutStartSec=600
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target

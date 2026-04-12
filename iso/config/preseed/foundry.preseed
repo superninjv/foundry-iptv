@@ -1,0 +1,62 @@
+# Locale and keyboard
+d-i debian-installer/locale string en_US.UTF-8
+d-i keyboard-configuration/xkb-keymap select us
+d-i keyboard-configuration/layoutcode string us
+
+# Network: DHCP on first detected interface
+d-i netcfg/choose_interface select auto
+d-i netcfg/get_hostname string foundry
+d-i netcfg/get_domain string local
+d-i netcfg/hostname string foundry
+
+# Mirror
+d-i mirror/country string manual
+d-i mirror/http/hostname string deb.debian.org
+d-i mirror/http/directory string /debian
+d-i mirror/http/proxy string
+
+# Clock
+d-i clock-setup/utc boolean true
+d-i time/zone string Etc/UTC
+d-i clock-setup/ntp boolean true
+
+# Partitioning: entire disk, GPT, atomic (single partition + EFI)
+d-i partman-auto/method string regular
+d-i partman-auto/choose_recipe select atomic
+d-i partman-partitioning/confirm_write_new_label boolean true
+d-i partman/choose_partition select finish
+d-i partman/confirm boolean true
+d-i partman/confirm_nooverwrite boolean true
+d-i partman-efi/non_efi_system boolean true
+d-i partman-auto/disk string /dev/sda
+
+# User: 'foundry' with default password 'foundry' (must change on first login)
+d-i passwd/root-login boolean false
+d-i passwd/user-fullname string Foundry Admin
+d-i passwd/username string foundry
+d-i passwd/user-password password foundry
+d-i passwd/user-password-again password foundry
+d-i passwd/user-default-groups string sudo docker
+
+# Package selection
+tasksel tasksel/first multiselect standard, ssh-server
+d-i pkgsel/upgrade select full-upgrade
+d-i pkgsel/update-policy select unattended-upgrades
+
+# Bootloader
+d-i grub-installer/only_debian boolean true
+d-i grub-installer/bootdev string default
+d-i grub-installer/with_other_os boolean false
+
+# Finish
+d-i finish-install/reboot_in_progress note
+d-i debian-installer/exit/poweroff boolean false
+
+# Post-install: enable services, add foundry user to docker group
+d-i preseed/late_command string \
+  in-target systemctl enable docker ; \
+  in-target systemctl enable foundry-firstboot.service ; \
+  in-target systemctl enable foundry.service ; \
+  in-target systemctl enable avahi-daemon ; \
+  in-target systemctl enable foundry-console-banner.service ; \
+  in-target usermod -aG docker foundry
