@@ -1,8 +1,5 @@
-# Docker (installed via hook that adds Docker apt repo)
-docker-ce
-docker-ce-cli
-containerd.io
-docker-compose-plugin
+# Docker is installed via 0050-docker-repo.hook.chroot
+# (needs ca-certificates before HTTPS fetch, so hook handles the full flow)
 
 # Networking
 avahi-daemon

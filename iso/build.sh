@@ -17,7 +17,33 @@ command -v docker >/dev/null || err "docker not installed"
 
 log "Phase 1: Build Docker images"
 cd "$PROJECT_ROOT"
-docker compose build --build-arg GIT_SHA="$GIT_SHA"
+
+# Generate a temporary .env if one doesn't exist (secrets don't matter for image builds)
+if [ ! -f .env ]; then
+  log "  No .env found, generating temporary build-only .env"
+  cat > .env.build <<ENVEOF
+POSTGRES_USER=foundry
+POSTGRES_PASSWORD=buildonly
+POSTGRES_DB=foundry
+DATABASE_URL=postgresql://foundry:buildonly@postgres:5432/foundry
+REDIS_URL=redis://redis:6379/0
+NEXTAUTH_SECRET=buildonly
+NEXTAUTH_URL=http://localhost
+TS2HLS_URL=http://ts2hls:3103
+TS2HLS_SHARED_SECRET=buildonly
+TS2HLS_BEARER_TOKEN=buildonly
+ENABLE_COMMERCIAL_DETECTION=false
+APP_TIMEZONE=Etc/UTC
+ENVEOF
+  ENV_FLAG="--env-file .env.build"
+  CLEANUP_ENV=true
+else
+  ENV_FLAG=""
+  CLEANUP_ENV=false
+fi
+
+docker compose ${ENV_FLAG} build --build-arg GIT_SHA="$GIT_SHA"
+$CLEANUP_ENV && rm -f .env.build || true
 
 log "Phase 2: Save + compress Docker images"
 mkdir -p "${CHROOT_DIR}/opt/foundry/docker-images"
@@ -47,16 +73,21 @@ for name in "${!IMAGES[@]}"; do
   docker save "$img" | zstd -T0 -3 -o "$tarball"
 done
 
-log "Phase 3: Copy application source"
+log "Phase 3: Copy application source (server only)"
 APP_DEST="${CHROOT_DIR}/opt/foundry"
-# Sync source, excluding build artifacts and the iso/ dir itself
+# Sync server source only — exclude clients, build artifacts, and heavy dirs
 rsync -a --delete \
   --exclude='node_modules' \
   --exclude='.git' \
   --exclude='iso/' \
   --exclude='.next' \
   --exclude='.env' \
+  --exclude='.env.build' \
   --exclude='docker-images' \
+  --exclude='clients/' \
+  --exclude='deep-reasoning-output/' \
+  --exclude='.claude/' \
+  --exclude='*.iso' \
   "${PROJECT_ROOT}/" "${APP_DEST}/"
 
 log "Phase 4: Generate docker-compose.prod.yml"
@@ -141,6 +172,9 @@ lb config \
   --cache true \
   --security true \
   --updates true
+
+# Docker is installed via hooks/live/0050-docker-repo.hook.chroot
+# (hook installs ca-certificates first, then adds Docker repo + packages)
 
 log "Phase 6: Build ISO"
 lb build
