@@ -20,5 +20,9 @@ export async function GET(
     end: p.end.toISOString(),
   }));
 
-  return NextResponse.json({ programs: serialized });
+  return NextResponse.json({ programs: serialized }, {
+    headers: {
+      'Cache-Control': 'private, max-age=30, stale-while-revalidate=300',
+    },
+  });
 }

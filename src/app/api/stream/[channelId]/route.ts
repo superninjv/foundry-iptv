@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiUser, unauthorized } from '@/lib/auth/session';
 import { getProviderUrl } from '@/lib/threadfin/client';
-import { createSession, destroySession, VALID_QUALITIES, type Quality } from '@/lib/stream/client';
+import { createSession, destroySession, changeSessionQuality, VALID_QUALITIES, type Quality } from '@/lib/stream/client';
 
 export async function POST(
   request: NextRequest,
@@ -45,6 +45,55 @@ export async function POST(
     sourceWidth: session.sourceWidth,
     sourceHeight: session.sourceHeight,
   });
+}
+
+/**
+ * PATCH /api/stream/[channelId]
+ * Body: { sid: string; quality: Quality }
+ * Proxies quality hot-swap to ts2hls /session/:sid/quality.
+ * The client must own a valid session (authenticated) — we don't verify
+ * that the sid belongs to *this user* since ts2hls sessions are
+ * capability-by-UUID. The bearer token on the ts2hls hop provides
+ * the server-to-server auth boundary.
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ channelId: string }> },
+) {
+  const user = await getApiUser();
+  if (!user) return unauthorized();
+
+  await params; // channelId not needed for quality change
+
+  let sid: string | undefined;
+  let quality: Quality | undefined;
+  try {
+    const body = await request.json();
+    sid = body?.sid;
+    quality = body?.quality;
+  } catch {
+    return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
+  }
+
+  if (!sid || typeof sid !== 'string') {
+    return NextResponse.json({ error: 'Missing sid' }, { status: 400 });
+  }
+  if (!quality || !VALID_QUALITIES.includes(quality)) {
+    return NextResponse.json({ error: 'Invalid quality' }, { status: 400 });
+  }
+
+  try {
+    const result = await changeSessionQuality(sid, quality);
+    // Rewrite localhost URL to match request origin
+    const origin = request.headers.get('x-forwarded-proto')
+      ? `${request.headers.get('x-forwarded-proto')}://${request.headers.get('host')}`
+      : `http://${request.headers.get('host') || 'localhost:3003'}`;
+    const hlsUrl = result.hlsUrl.replace('http://localhost:3103', origin);
+    return NextResponse.json({ ok: true, hlsUrl });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Quality change failed';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function DELETE(

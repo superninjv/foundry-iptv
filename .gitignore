@@ -50,3 +50,7 @@ services/ts2hls/node_modules
 services/ts2hls/dist
 services/multiview-rotor/node_modules
 services/multiview-rotor/dist
+
+# Claude Code session artifacts (agent worktrees, plans, memory)
+.claude/
+.claire/

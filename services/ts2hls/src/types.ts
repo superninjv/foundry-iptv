@@ -6,6 +6,7 @@ export interface Session {
   channelUrl: string;
   channelId?: string;
   quality?: Quality;
+  mode: StreamMode;
   hlsDir: string;
   hlsUrl: string;
   pid: number;

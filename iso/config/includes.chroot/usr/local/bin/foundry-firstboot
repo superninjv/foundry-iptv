@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+INSTALL_DIR="/opt/foundry"
+IMAGES_DIR="${INSTALL_DIR}/docker-images"
+LOG="/var/log/foundry-firstboot.log"
+
+log() { printf '[%s] %s\n' "$(date -Iseconds)" "$*" | tee -a "$LOG"; }
+
+log "Foundry IPTV first boot starting"
+
+# 1. Generate .env with unique secrets
+log "Generating .env with unique secrets"
+pg_pass="$(openssl rand -hex 32)"
+nextauth_secret="$(openssl rand -hex 32)"
+ts2hls_secret="$(openssl rand -hex 32)"
+ts2hls_bearer="$(openssl rand -hex 32)"
+
+# Detect primary IP
+host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+host_ip="${host_ip:-127.0.0.1}"
+
+cat > "${INSTALL_DIR}/.env" <<EOF
+POSTGRES_USER=foundry
+POSTGRES_PASSWORD=${pg_pass}
+POSTGRES_DB=foundry
+DATABASE_URL=postgresql://foundry:${pg_pass}@postgres:5432/foundry
+REDIS_URL=redis://redis:6379/0
+NEXTAUTH_SECRET=${nextauth_secret}
+NEXTAUTH_URL=http://${host_ip}
+TS2HLS_URL=http://ts2hls:3103
+TS2HLS_SHARED_SECRET=${ts2hls_secret}
+TS2HLS_BEARER_TOKEN=${ts2hls_bearer}
+ENABLE_COMMERCIAL_DETECTION=false
+APP_TIMEZONE=Etc/UTC
+EOF
+chmod 600 "${INSTALL_DIR}/.env"
+log ".env generated (host IP: ${host_ip})"
+
+# 2. Load Docker images from baked tarballs
+if [ -d "$IMAGES_DIR" ] && ls "${IMAGES_DIR}"/*.tar.zst >/dev/null 2>&1; then
+  log "Loading Docker images from baked tarballs"
+  for img in "${IMAGES_DIR}"/*.tar.zst; do
+    name="$(basename "$img" .tar.zst)"
+    log "  Loading ${name}..."
+    zstd -d --stdout "$img" | docker load
+  done
+
+  # Free disk space
+  log "Removing image tarballs to free disk"
+  rm -rf "$IMAGES_DIR"
+else
+  log "No baked images found at ${IMAGES_DIR}, will pull on compose up"
+fi
+
+# 3. Start the compose stack
+log "Starting Docker Compose stack"
+cd "$INSTALL_DIR"
+docker compose up -d
+
+# 4. Wait for health
+log "Waiting for health check..."
+for i in $(seq 1 60); do
+  if curl -fsS http://localhost:3003/api/health >/dev/null 2>&1; then
+    log "Stack is healthy"
+    break
+  fi
+  if [ "$i" -eq 60 ]; then
+    log "WARNING: Health check timed out after 60 attempts, stack may still be starting"
+  fi
+  sleep 3
+done
+
+# 5. Mark first boot complete
+touch "${INSTALL_DIR}/.firstboot-done"
+log "First boot complete. Setup wizard available at http://${host_ip}"

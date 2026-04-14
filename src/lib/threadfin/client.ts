@@ -20,8 +20,22 @@ import type { IncomingMessage } from 'node:http';
 import type { Channel, EpgProgram, NowNext } from './types';
 
 const THREADFIN_URL = process.env.THREADFIN_URL || 'http://threadfin.foundry.test';
-const RAW_M3U_URL =
-  process.env.RAW_M3U_URL || `${THREADFIN_URL}/raw/prime.m3u`;
+
+// RAW_M3U_URL is resolved lazily so we can prefer a DB-backed config value
+// over the environment variable without making module load async.
+let _resolvedM3uUrl: string | null = null;
+
+async function getM3uUrl(): Promise<string> {
+  if (_resolvedM3uUrl) return _resolvedM3uUrl;
+  try {
+    const { getConfigOrEnv } = await import('@/lib/config/db');
+    const url = await getConfigOrEnv('m3u_url', 'RAW_M3U_URL');
+    _resolvedM3uUrl = url ?? `${THREADFIN_URL}/raw/prime.m3u`;
+  } catch {
+    _resolvedM3uUrl = process.env.RAW_M3U_URL ?? `${THREADFIN_URL}/raw/prime.m3u`;
+  }
+  return _resolvedM3uUrl;
+}
 
 // Persist caches across Next.js dev-mode hot reloads via globalThis. The
 // inflight promise is also stored here so concurrent listChannels() calls
@@ -117,6 +131,9 @@ function rawHttpGet(urlStr: string): Promise<IncomingMessage> {
 }
 
 async function fetchChannelsFromRawM3u(): Promise<Channel[]> {
+  const RAW_M3U_URL = await getM3uUrl();
+  // Reset resolved URL so next invocation re-checks the DB (in case admin changed it)
+  _resolvedM3uUrl = null;
   console.log(`[channels] streaming raw M3U from ${RAW_M3U_URL}`);
   let stream: IncomingMessage;
   try {
@@ -275,6 +292,25 @@ export async function getCategories(): Promise<string[]> {
     if (ch.group) groups.add(ch.group);
   }
   return Array.from(groups).sort();
+}
+
+/**
+ * List unique category names with channel counts. Derived from the cached
+ * channel list (same source as `getCategories()` — no extra fetch).
+ *
+ * Used by the native FireStick client so category badges can render without a
+ * follow-up round-trip.
+ */
+export async function getCategoriesWithCounts(): Promise<Array<{ name: string; count: number }>> {
+  const channels = await listChannels();
+  const counts = new Map<string, number>();
+  for (const ch of channels) {
+    if (!ch.group) continue;
+    counts.set(ch.group, (counts.get(ch.group) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ---------------------------------------------------------------------------

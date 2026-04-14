@@ -1,0 +1,318 @@
+// Foundry IPTV — UniFFI interface for the Kotlin Android shell.
+//
+// This UDL is the authoritative contract between foundry-core and the
+// uniffi-generated FoundryCore.kt. Every type and method declared here
+// must have a matching Rust impl in `src/ffi.rs`.
+//
+// Generation (run from clients/foundry-core):
+//   cargo run --features uniffi --bin uniffi-bindgen -- generate \
+//       src/foundry_core.udl --language kotlin \
+//       --out-dir ../foundry-android/app/src/main/java/
+
+namespace foundry_core {
+    /// Exchange a short-lived pairing code (from /admin/devices) for a
+    /// long-lived bearer token. Blocking — call from a background thread.
+    [Throws=AuthError]
+    string exchange_pairing_code(string base_url, string code, string label);
+};
+
+// ---------------------------------------------------------------------------
+// Data types
+// ---------------------------------------------------------------------------
+
+dictionary Channel {
+    string id;
+    string name;
+    string? group;
+    string? logo_url;
+    string? tvg_id;
+};
+
+dictionary Category {
+    string id;
+    string name;
+    u32 channel_count;
+};
+
+dictionary EpgEntry {
+    string channel_id;
+    string start;
+    string end;
+    string title;
+    string? description;
+};
+
+dictionary StreamSession {
+    string sid;
+    string hls_url;
+    string channel_id;
+};
+
+dictionary VodItem {
+    i64 stream_id;
+    string name;
+    string? stream_icon;
+    string? rating;
+    string? category_id;
+    string? container_extension;
+};
+
+dictionary SeriesItem {
+    i64 series_id;
+    string name;
+    string? cover;
+    string? plot;
+    string? genre;
+    string? rating;
+    string? category_id;
+};
+
+dictionary DeckEntry {
+    string entry_id;
+    string channel_id;
+    i32 position;
+    boolean in_commercial;
+    Channel? channel;
+};
+
+dictionary VodStreamSession {
+    string sid;
+    string url;
+    string kind;
+};
+
+dictionary EpgBatchEntry {
+    string channel_id;
+    sequence<EpgEntry> programs;
+};
+
+enum MediaType {
+    "Live",
+    "Vod",
+    "Series",
+};
+
+dictionary Deck {
+    string id;
+    string name;
+    sequence<DeckEntry> entries;
+};
+
+dictionary UserList {
+    string id;
+    string name;
+    string kind;
+    u32 channel_count;
+};
+
+dictionary SearchResult {
+    sequence<Channel> channels;
+    sequence<EpgEntry> programs;
+    sequence<VodItem> vod;
+};
+
+dictionary StartupConfig {
+    string? default_deck_id;
+    string default_view_mode;
+    boolean allow_user_override;
+};
+
+dictionary UserSettings {
+    string user_id;
+    string email;
+    string? device_label;
+    string version;
+    string token_id;
+    string platform;
+};
+
+dictionary WatchHistoryEntry {
+    string channel_id;
+    string started_at;
+    string media_type;
+    i64? vod_stream_id;
+};
+
+// ---------------------------------------------------------------------------
+// ApiClient — full surface used by the Kotlin shell.
+// ---------------------------------------------------------------------------
+
+interface ApiClient {
+    constructor(string base_url);
+
+    /// Store a device bearer token on the client.
+    void set_token(string token);
+
+    // -----------------------------------------------------------------------
+    // Channels + EPG
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    sequence<Channel> list_channels();
+
+    [Throws=ApiError]
+    sequence<Channel> list_channels_by_category(string category_id);
+
+    [Throws=ApiError]
+    sequence<Category> list_categories();
+
+    [Throws=ApiError]
+    sequence<EpgEntry> get_epg(string channel_id, u32 hours);
+
+    // -----------------------------------------------------------------------
+    // Streaming
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    StreamSession start_stream(string channel_id);
+
+    [Throws=ApiError]
+    void stop_stream(string channel_id, string sid);
+
+    [Throws=ApiError]
+    string change_quality(string sid, string quality);
+
+    // -----------------------------------------------------------------------
+    // VOD / Series
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    sequence<VodItem> list_vod(string? category);
+
+    // -----------------------------------------------------------------------
+    // Library (watched-only) — 5 s client-side cache TTL.
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    sequence<Channel> list_library_live();
+
+    [Throws=ApiError]
+    sequence<VodItem> list_library_vod();
+
+    [Throws=ApiError]
+    sequence<SeriesItem> list_library_series();
+
+    [Throws=ApiError]
+    string get_vod_detail(string id);
+
+    [Throws=ApiError]
+    sequence<SeriesItem> list_series(string? category);
+
+    [Throws=ApiError]
+    string get_series_detail(string id);
+
+    // -----------------------------------------------------------------------
+    // Decks
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    sequence<Deck> list_decks();
+
+    [Throws=ApiError]
+    Deck get_deck(string id);
+
+    [Throws=ApiError]
+    StreamSession start_deck_stream(string deck_id, u32 entry_index, string? quality);
+
+    [Throws=ApiError]
+    string create_deck(string name);
+
+    [Throws=ApiError]
+    void delete_deck(string deck_id);
+
+    [Throws=ApiError]
+    void rename_deck(string deck_id, string name);
+
+    [Throws=ApiError]
+    void set_deck_skip_commercials(string deck_id, boolean skip);
+
+    [Throws=ApiError]
+    string add_deck_entry(string deck_id, string channel_id);
+
+    [Throws=ApiError]
+    void remove_deck_entry(string deck_id, string entry_id);
+
+    // -----------------------------------------------------------------------
+    // Lists / favorites
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    sequence<UserList> list_lists();
+
+    [Throws=ApiError]
+    sequence<Channel> list_list_channels(string list_id);
+
+    [Throws=ApiError]
+    void add_to_list(string list_id, string channel_id);
+
+    [Throws=ApiError]
+    sequence<string> list_favorites();
+
+    [Throws=ApiError]
+    boolean toggle_favorite(string channel_id);
+
+    // -----------------------------------------------------------------------
+    // Search
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    SearchResult search(string query);
+
+    [Throws=ApiError]
+    SearchResult ai_search(string query);
+
+    // -----------------------------------------------------------------------
+    // Settings / history
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    StartupConfig get_startup();
+
+    [Throws=ApiError]
+    UserSettings get_settings();
+
+    [Throws=ApiError]
+    sequence<WatchHistoryEntry> list_watch_history();
+
+    /// Fire-and-forget watch history write. Errors are logged inside
+    /// Rust but never surfaced to Kotlin.
+    void record_watch_history(MediaType media_type, string id, string? display_name);
+
+    // -----------------------------------------------------------------------
+    // VOD / Series playback
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    VodStreamSession start_vod_stream(string stream_id, string? ext);
+
+    [Throws=ApiError]
+    VodStreamSession start_episode_stream(string episode_id, string? ext);
+
+    // -----------------------------------------------------------------------
+    // EPG batch (Guide fan-out)
+    // -----------------------------------------------------------------------
+
+    [Throws=ApiError]
+    sequence<EpgBatchEntry> get_epg_batch(sequence<string> channel_ids, u32 hours);
+};
+
+// ---------------------------------------------------------------------------
+// Errors — flat variants (uniffi 0.28 supports both flat and dict errors; we
+// use flat + carry detail in the Display impl that uniffi surfaces to Kotlin).
+// ---------------------------------------------------------------------------
+
+[Error]
+enum ApiError {
+    "Unauthenticated",
+    "Network",
+    "Server",
+    "Json",
+    "Other",
+};
+
+[Error]
+enum AuthError {
+    "Network",
+    "Rejected",
+    "Parse",
+};

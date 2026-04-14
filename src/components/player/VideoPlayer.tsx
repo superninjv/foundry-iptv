@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import Hls from 'hls.js';
+import { pickHlsConfig } from './hls-config';
 
 interface VideoPlayerProps {
   hlsUrl: string;
@@ -32,17 +33,22 @@ const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(function Vide
     const video = videoRef.current;
     if (!video) return;
 
-    // Safari native HLS — use src swap for URL changes.
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = hlsUrl;
-      video.addEventListener('loadedmetadata', () => onReady?.());
-      video.addEventListener('error', () =>
-        handleError('Video playback error'),
-      );
-      return;
-    }
-
+    // Prefer hls.js over native wherever MSE is available. Fire TV Silk
+    // reports canPlayType('application/vnd.apple.mpegurl') = "maybe" via
+    // Amazon's patched platform decoder, but the native path is flaky:
+    // it has no retry on transient segment 404s, no quality switching via
+    // loadSource, and emits a bare `error` event with no recovery info.
+    // Desktop Safari is the only environment where native HLS is actually
+    // better than hls.js, so only fall back to native when MSE is absent.
     if (!Hls.isSupported()) {
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = hlsUrl;
+        video.addEventListener('loadedmetadata', () => onReady?.());
+        video.addEventListener('error', () =>
+          handleError('Video playback error'),
+        );
+        return;
+      }
       handleError('HLS is not supported in this browser');
       return;
     }
@@ -56,34 +62,36 @@ const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(function Vide
       return;
     }
 
-    // Live HLS needs DVR-friendly config (big back buffer, wide latency
-    // tolerance so rewinds don't snap to live). VOD playback must NOT carry
-    // those live settings: hls.js will otherwise keep trying to sync to the
-    // "live edge" of the event playlist, which for VOD means the encoder's
-    // head position — causing it to stall waiting for segments that haven't
-    // been written yet and show very slow playback progress.
+    // Live HLS needs DVR-friendly config (wide latency tolerance so rewinds
+    // don't snap to live). VOD must NOT carry those live settings: hls.js
+    // will otherwise keep trying to sync to the event playlist's "live edge"
+    // (the encoder head) and stall waiting for segments that don't exist yet.
+    //
+    // Platform-specific buffer limits come from pickHlsConfig() — Fire TV
+    // Silk gets tight values inside its ~100-200 MB MSE budget; desktop gets
+    // relaxed values. We override liveMaxLatencyDurationCount to 150 on live
+    // streams so scrubbing back into the DVR window doesn't snap forward.
+    const platformConfig = pickHlsConfig();
     const hls = isLive
       ? new Hls({
-          enableWorker: true,
+          ...platformConfig,
           lowLatencyMode: false,
           liveSyncDurationCount: 3,
           liveMaxLatencyDurationCount: 150,
-          backBufferLength: 300,
           liveDurationInfinity: true,
         })
       : new Hls({
-          enableWorker: true,
+          ...platformConfig,
           lowLatencyMode: false,
           // Start at the beginning, not at the current encoder head.
           startPosition: 0,
-          backBufferLength: 300,
+          liveDurationInfinity: false,
           // Cap forward prefetch. Without these, ffmpeg (running -c:v copy
           // without -re) races ahead and hls.js greedily downloads every
           // segment the event playlist exposes, causing a visible stall as
           // the buffer suddenly jumps from 10s to 5+ minutes.
           maxBufferLength: 30,
           maxMaxBufferLength: 60,
-          maxBufferSize: 60 * 1000 * 1000,
         });
 
     hlsRef.current = hls;

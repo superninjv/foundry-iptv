@@ -1,4 +1,9 @@
 'use client';
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Foundry IPTV Contributors
+// This file is part of Foundry IPTV, licensed under AGPL-3.0.
+// See LICENSE file in the project root.
+
 
 // nav:
 //   Mouse/touch/keydown → wake overlay, reset 3s hide timer
@@ -15,6 +20,7 @@ import {
   type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
+import { ChevronLeftIcon } from '@/components/icons';
 
 export interface PlayerOverlayProps {
   visible?: boolean;
@@ -130,7 +136,11 @@ export default function PlayerOverlay({
         className="absolute inset-0 z-10 flex flex-col justify-between transition-opacity duration-300"
         style={{
           opacity: visible ? 1 : 0,
-          pointerEvents: visible ? 'auto' : 'none',
+          // Backdrop is visual only — clicks in the empty middle must fall
+          // through to the content underneath (e.g. MultiviewGrid's empty-cell
+          // "Add Channel" button). The top/bottom chrome children re-enable
+          // pointer events on themselves below.
+          pointerEvents: 'none',
         }}
       >
         <div
@@ -138,6 +148,7 @@ export default function PlayerOverlay({
           style={{
             background: 'linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, transparent 100%)',
             paddingLeft: 'max(1.5rem, calc(4rem + 1rem))',
+            pointerEvents: visible ? 'auto' : 'none',
           }}
         >
           {onBack && (
@@ -152,9 +163,7 @@ export default function PlayerOverlay({
               aria-label="Back"
               tabIndex={0}
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M19 12H5M12 19l-7-7 7-7" />
-              </svg>
+              <ChevronLeftIcon size={24} />
             </button>
           )}
           <div className="min-w-0 flex-1">
@@ -184,6 +193,7 @@ export default function PlayerOverlay({
           style={{
             background: 'linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 100%)',
             paddingLeft: 'max(1.5rem, calc(4rem + 1rem))',
+            pointerEvents: visible ? 'auto' : 'none',
           }}
           onKeyDown={handleMetaKey}
         >
@@ -192,12 +202,6 @@ export default function PlayerOverlay({
         </div>
       </div>
 
-      <style jsx>{`
-        :global(.overlay-focus:focus-visible) {
-          outline: 2px solid var(--accent);
-          outline-offset: 2px;
-        }
-      `}</style>
     </div>
   );
 }

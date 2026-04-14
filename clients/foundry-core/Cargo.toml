@@ -1,0 +1,49 @@
+[package]
+name = "foundry-core"
+description = "Shared Rust core for Foundry IPTV clients"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+# Both staticlib (for Android linker) and cdylib (for JNI loadLibrary).
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[features]
+default = []
+# Enable uniffi bindings generation for the Kotlin/Android shell.
+uniffi = ["dep:uniffi"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["uniffi"]
+
+[dependencies]
+tokio.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+sqlx.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+hex.workspace = true
+dirs.workspace = true
+toml.workspace = true
+uniffi = { version = "0.28", features = ["cli"], optional = true }
+log = "0.4"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.14"
+
+[build-dependencies]
+uniffi_build = { version = "0.28" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+wiremock.workspace = true

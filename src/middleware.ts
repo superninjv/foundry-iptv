@@ -1,20 +1,34 @@
 // src/middleware.ts
-// Edge-compatible middleware. No Node imports. Decodes the NextAuth JWT with
-// jose and redirects unauthenticated requests on (app)/* routes to /login.
+// Setup gate (Track E) runs BEFORE the auth checks.
+// Middleware runtime choice: Node.js (Option C).
+// We use `export const runtime = 'nodejs'` so we can read the DB-backed
+// setup_complete flag directly via the iptv_config table. Edge runtime
+// cannot reach local Postgres or ioredis, so Option C (Node middleware) is
+// the cleanest solution for Next.js 16.
+//
+// Auth paths (Track D, unchanged):
+//   1. Cookie-based (NextAuth JWT) — web clients
+//   2. Bearer token (device tokens) — Rust native clients
+//      Authorization: Bearer <rawToken>  →  SHA-256 hash looked up in iptv_device_tokens
 // Auth checks ALSO happen at the data-access layer (see src/lib/auth/session.ts).
 
+export const runtime = 'nodejs';
+
 import { NextRequest, NextResponse } from 'next/server';
+import { getConfig } from '@/lib/config/db';
 
 const STATIC_EXTENSIONS = [
   '.ico', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp',
   '.css', '.js', '.map', '.woff', '.woff2', '.ttf', '.eot',
 ];
 
-// Paths that don't require auth.
+// Paths exempt from both the setup gate and auth check.
 const PUBLIC_PREFIXES = [
   '/login',
   '/api/auth',
   '/api/health',
+  '/setup',
+  '/api/setup',
 ];
 
 // (app)/* routes — any top-level segment the app layout owns. Checked by
@@ -29,6 +43,7 @@ const APP_PREFIXES = [
   '/search',
   '/lists',
   '/settings',
+  '/admin',
   '/api/channels',
   '/api/epg',
   '/api/stream',
@@ -36,6 +51,17 @@ const APP_PREFIXES = [
   '/api/series',
   '/api/search',
   '/api/lists',
+  '/api/admin',
+  '/api/startup',
+  '/api/decks',
+  '/api/favorites',
+  '/api/history',
+  '/api/library',
+  '/api/multiview',
+  '/api/settings',
+  '/api/img-proxy',
+  '/api/ai',
+  '/api/signals',
 ];
 
 function isPublicRoute(pathname: string): boolean {
@@ -103,7 +129,35 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
+  // ── Setup gate (Track E) ───────────────────────────────────────────────────
+  // Non-public routes are redirected to /setup until setup_complete='true'.
+  // We read from iptv_config — safe here because runtime = 'nodejs'.
+  try {
+    const setupComplete = await getConfig('setup_complete');
+    if (setupComplete !== 'true') {
+      const setupUrl = new URL('/setup', req.url);
+      return NextResponse.redirect(setupUrl);
+    }
+  } catch {
+    // If DB is unreachable during startup, let the request through so error
+    // pages can render. The app itself will fail gracefully.
+  }
+  // ── End setup gate ────────────────────────────────────────────────────────
+
   if (isAppRoute(pathname)) {
+    // Bearer token path — Rust native clients send Authorization: Bearer <token>.
+    // We can't do a DB lookup in Edge, so we pass the token through via a
+    // request header. The actual validation happens in getApiUser() / route
+    // handlers (Node.js runtime). We only skip the cookie check here.
+    const authHeader = req.headers.get('authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      // Forward the bearer token as a sanitised header the route handler can read.
+      // Stripping the original authorization header prevents double-processing.
+      requestHeaders.set('x-device-bearer', authHeader.slice('Bearer '.length).trim());
+      const res = NextResponse.next({ request: { headers: requestHeaders } });
+      return res;
+    }
+
     const session = await getSessionFromToken(req);
     if (!session?.id) {
       // API routes: 401 JSON. Pages: redirect to login.
