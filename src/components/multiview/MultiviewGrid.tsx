@@ -1,24 +1,21 @@
 'use client';
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Foundry IPTV Contributors
+// This file is part of Foundry IPTV, licensed under AGPL-3.0.
+// See LICENSE file in the project root.
 
 // src/components/multiview/MultiviewGrid.tsx
-// Multiview grid — all tiles in the active preset are "active" simultaneously
-// (all visible + playing). Uses WarmDeckProvider so switching layouts or
-// audio focus is instant. Quality is dictated by layout; the warm pool uses
-// that as the preferredQuality for each tile.
-//
-// Audio focus: the focused tile is unmuted (promoted); others are demoted
-// (muted). promote/demote still work within the warm pool — the pool keeps
-// hls.js running regardless; only mute state changes.
+// Multiview grid backed by the global singleton pool. Each tile is an iframe
+// loading the standard watch page in embed mode. The pool manages the single
+// provider connection; tiles are completely unaware of pool internals.
+// Heartbeat every 10s keeps channels alive.
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import PlayerOverlay from '@/components/player/PlayerOverlay';
+import { useEffect, useRef, useState, useCallback, forwardRef } from 'react';
 import { CellControls } from './CellControls';
 import { LayoutPicker } from './LayoutPicker';
-import { ChannelPicker } from './ChannelPicker';
-import { qualityForLayout, type MultiviewLayout } from '@/lib/player/multiview-quality';
+import { ChannelPicker, type PickerSelection } from './ChannelPicker';
+import { type MultiviewLayout } from '@/lib/player/multiview-quality';
 import { AddIcon } from '@/components/icons';
-import { WarmDeckProvider, useWarmStream } from '@/components/decks/WarmDeckProvider';
-import type { Quality } from '@/lib/stream/client';
 
 type Layout = MultiviewLayout;
 
@@ -26,6 +23,14 @@ interface MultiviewGridProps {
   initialChannelIds?: string[];
   initialLayout?: string;
   embedded?: boolean;
+  /**
+   * Called when the user picks a channel from the grid's own Add Channel
+   * button. When provided, the grid delegates the add to the parent (e.g.
+   * DeckPlayer persists it as a deck entry) instead of appending to its own
+   * local channelIds state. The parent is expected to update the grid's
+   * `initialChannelIds` after persisting (triggering a remount via key).
+   */
+  onAddChannel?: (item: PickerSelection) => void;
 }
 
 const GRID_STYLES: Record<Layout, React.CSSProperties> = {
@@ -34,86 +39,64 @@ const GRID_STYLES: Record<Layout, React.CSSProperties> = {
     gridTemplateColumns: '1fr 1fr',
     gridTemplateRows: '1fr 1fr',
   },
-  '3x3': {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gridTemplateRows: 'repeat(3, 1fr)',
-  },
   '1+3': {
     display: 'grid',
     gridTemplateColumns: '2fr 1fr',
     gridTemplateRows: '1fr 1fr',
   },
-  '2+4': {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gridTemplateRows: '2fr 1fr 1fr',
-  },
 };
 
-// Map ts2hls quality strings to our warm pool quality levels
-function tsQualityToWarmQuality(q: Quality): 'low' | 'medium' | 'high' {
-  if (q === '480p' || q === '360p') return 'low';
-  if (q === '720p') return 'medium';
-  return 'high';
-}
-
 // --------------------------------------------------------------------------
-// WarmMultiviewTile — one cell that pulls its video from the warm pool
+// Tile -- iframe per channel for MSE isolation
 // --------------------------------------------------------------------------
 
-function WarmMultiviewTile({
-  channelId,
-  channelName,
-  isFocused,
-  preferredQuality,
-  cellStyle,
-  onFocus,
-  onRemove,
-}: {
+const Tile = forwardRef<HTMLIFrameElement, {
   channelId: string;
   channelName: string;
   isFocused: boolean;
-  preferredQuality: 'low' | 'medium' | 'high';
   cellStyle: React.CSSProperties;
   onFocus: () => void;
   onRemove: () => void;
-}) {
-  // All multiview tiles are "active" (playing); audio focus = isFocused.
-  // useWarmStream with isActive=true keeps them all buffering at preferredQuality.
-  // We manually unmute/mute based on isFocused inside the tile.
-  const { attachSlot, handle } = useWarmStream(channelId, true, preferredQuality);
-  const slotRef = useRef<HTMLDivElement | null>(null);
+}>(function Tile({ channelId, channelName, isFocused, cellStyle, onFocus, onRemove }, ref) {
+  const [ready, setReady] = useState(false);
 
-  const setSlotRef = useCallback(
-    (el: HTMLDivElement | null) => {
-      slotRef.current = el;
-      attachSlot(el);
-    },
-    [attachSlot],
-  );
+  // Each iframe loads the standard watch page in embed mode.
+  // The watch page registers interest with the global pool on its own.
+  const embedUrl = `/watch/${channelId}?embed=1&muted=1`;
 
-  // Manage mute state: only the focused tile has audio
   useEffect(() => {
-    if (!handle) return;
-    handle.video.muted = !isFocused;
-  }, [isFocused, handle]);
+    function onMessage(e: MessageEvent) {
+      if (e.data?.type === 'foundry:ready' && e.data?.channelId === channelId) {
+        setReady(true);
+      }
+    }
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [channelId]);
 
   return (
     <div
-      className="relative overflow-hidden"
+      className="relative overflow-hidden cursor-pointer"
       style={{
         ...cellStyle,
         backgroundColor: '#000',
         outline: isFocused ? '2px solid var(--accent)' : 'none',
         outlineOffset: '-2px',
       }}
+      onClick={onFocus}
     >
-      <div
-        ref={setSlotRef}
-        className="h-full w-full"
-        style={{ backgroundColor: '#000' }}
+      <iframe
+        ref={ref}
+        src={embedUrl}
+        className="h-full w-full border-0"
+        allow="autoplay"
       />
+      {!ready && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent"
+            style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
+        </div>
+      )}
       <CellControls
         channelName={channelName}
         isFocused={isFocused}
@@ -122,25 +105,39 @@ function WarmMultiviewTile({
       />
     </div>
   );
-}
+});
 
 // --------------------------------------------------------------------------
-// MultiviewGridInner — consumes WarmDeckProvider context
+// MultiviewGridInner
 // --------------------------------------------------------------------------
 
-function MultiviewGridInner({ initialChannelIds, initialLayout, embedded }: MultiviewGridProps) {
+function MultiviewGridInner({ initialChannelIds, initialLayout, onAddChannel }: MultiviewGridProps) {
   const [channelIds, setChannelIds] = useState<string[]>(initialChannelIds ?? []);
   const [channelNames, setChannelNames] = useState<Record<string, string>>({});
   const [layout, setLayout] = useState<Layout>((initialLayout as Layout) || '2x2');
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [showPicker, setShowPicker] = useState(false);
-  const [loading, setLoading] = useState(false);
 
-  // Current quality tier from layout
-  const currentQuality = qualityForLayout(layout);
-  const preferredWarmQuality = tsQualityToWarmQuality(currentQuality);
+  // Iframe refs for sending mute/unmute postMessages
+  const iframeRefs = useRef<Map<string, HTMLIFrameElement | null>>(new Map());
 
-  // Fetch channel names on mount and when channelIds change
+  // Heartbeat: keep all active channels alive in the global pool
+  const channelIdsRef = useRef(channelIds);
+  channelIdsRef.current = channelIds;
+
+  useEffect(() => {
+    if (channelIds.length === 0) return;
+    const interval = setInterval(() => {
+      fetch('/api/stream/heartbeat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelIds: channelIdsRef.current }),
+      }).catch(() => {});
+    }, 10_000);
+    return () => clearInterval(interval);
+  }, [channelIds.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch channel names
   useEffect(() => {
     if (channelIds.length === 0) return;
     let cancelled = false;
@@ -162,33 +159,52 @@ function MultiviewGridInner({ initialChannelIds, initialLayout, embedded }: Mult
     return () => { cancelled = true; };
   }, [channelIds]);
 
+  // Focus change: tell the pool which channel has audio + mute/unmute iframes
+  const handleFocus = useCallback((index: number) => {
+    const prevChannelId = channelIds[focusedIndex];
+    const newChannelId = channelIds[index];
+    setFocusedIndex(index);
+
+    // Clear old focus, set new focus in the pool
+    if (prevChannelId && prevChannelId !== newChannelId) {
+      fetch(`/api/stream/${prevChannelId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ focus: false }),
+      }).catch(() => {});
+    }
+    if (newChannelId) {
+      fetch(`/api/stream/${newChannelId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ focus: true }),
+      }).catch(() => {});
+    }
+
+    // Mute all iframes except the focused one
+    for (const [chId, iframe] of iframeRefs.current) {
+      if (!iframe?.contentWindow) continue;
+      iframe.contentWindow.postMessage(
+        { type: 'foundry:mute', muted: chId !== newChannelId },
+        '*',
+      );
+    }
+  }, [channelIds, focusedIndex]);
+
   const handleAddChannel = useCallback(
-    async (channelId: string) => {
+    (item: PickerSelection) => {
       setShowPicker(false);
-      setLoading(true);
-      try {
-        // Fetch name for the new channel
-        const res = await fetch('/api/channels');
-        if (res.ok) {
-          const { channels } = await res.json();
-          const ch = channels.find((c: { id: string; name: string }) => c.id === channelId);
-          if (ch) {
-            setChannelNames((prev) => ({ ...prev, [channelId]: ch.name }));
-          }
-        }
-        setChannelIds((prev) => [...prev, channelId]);
-      } finally {
-        setLoading(false);
+      if (onAddChannel) {
+        onAddChannel(item);
+        return;
       }
+      setChannelIds((prev) => [...prev, item.id]);
     },
-    [],
+    [onAddChannel],
   );
 
   const handleRemoveChannel = useCallback((index: number) => {
-    setChannelIds((prev) => {
-      const next = prev.filter((_, i) => i !== index);
-      return next;
-    });
+    setChannelIds((prev) => prev.filter((_, i) => i !== index));
     setFocusedIndex((prev) => {
       if (prev === index) return 0;
       if (prev > index) return prev - 1;
@@ -196,13 +212,33 @@ function MultiviewGridInner({ initialChannelIds, initialLayout, embedded }: Mult
     });
   }, []);
 
-  const maxSlots =
-    layout === '3x3' ? 9 : layout === '2+4' ? 6 : layout === '1+3' ? 4 : 4;
+  // Auto-hide top bar after 3s of no mouse activity
+  const [barVisible, setBarVisible] = useState(true);
+  const barTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (channelIds.length === 0) return;
+    function resetBar() {
+      setBarVisible(true);
+      if (barTimerRef.current) clearTimeout(barTimerRef.current);
+      barTimerRef.current = setTimeout(() => setBarVisible(false), 3000);
+    }
+    resetBar();
+    document.addEventListener('mousemove', resetBar);
+    document.addEventListener('keydown', resetBar);
+    return () => {
+      if (barTimerRef.current) clearTimeout(barTimerRef.current);
+      document.removeEventListener('mousemove', resetBar);
+      document.removeEventListener('keydown', resetBar);
+    };
+  }, [channelIds.length]);
+
+  const maxSlots = 4; // both '2x2' and '1+3' hold 4 tiles
   const canAdd = channelIds.length < maxSlots;
   const excludeIds = channelIds;
 
   // Empty state
-  if (!loading && channelIds.length === 0) {
+  if (channelIds.length === 0) {
     return (
       <div className="flex h-full flex-col">
         <div
@@ -233,21 +269,21 @@ function MultiviewGridInner({ initialChannelIds, initialLayout, embedded }: Mult
     );
   }
 
-  const grid = (
+  return (
     <div className="flex h-full flex-col">
-      {/* Top bar */}
+      {/* Top bar -- auto-hides after 3s */}
       <div
-        className="flex items-center justify-between border-b px-4"
-        style={{ height: '4rem', backgroundColor: 'var(--bg-raised)', borderColor: 'var(--border)' }}
+        className="flex items-center justify-between border-b px-4 transition-all duration-200"
+        style={{
+          height: barVisible ? '4rem' : '0',
+          overflow: 'hidden',
+          opacity: barVisible ? 1 : 0,
+          backgroundColor: 'var(--bg-raised)',
+          borderColor: 'var(--border)',
+        }}
       >
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold" style={{ color: 'var(--fg)' }}>Multiview</h1>
-          {loading && (
-            <div
-              className="h-5 w-5 animate-spin rounded-full border-2 border-t-transparent"
-              style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }}
-            />
-          )}
         </div>
         <div className="flex items-center gap-3">
           <LayoutPicker layout={layout} onLayoutChange={(l) => setLayout(l as Layout)} />
@@ -265,7 +301,7 @@ function MultiviewGridInner({ initialChannelIds, initialLayout, embedded }: Mult
       </div>
 
       {/* Video grid */}
-      <div className="flex-1 overflow-hidden" style={{ height: 'calc(100vh - 4rem)' }}>
+      <div className="flex-1 overflow-hidden">
         <div
           className="h-full w-full gap-[2px]"
           style={{ ...GRID_STYLES[layout], backgroundColor: 'var(--border)' }}
@@ -274,14 +310,17 @@ function MultiviewGridInner({ initialChannelIds, initialLayout, embedded }: Mult
             const cellStyle: React.CSSProperties =
               layout === '1+3' && i === 0 ? { gridRow: '1 / 3' } : {};
             return (
-              <WarmMultiviewTile
+              <Tile
                 key={channelId}
+                ref={(el) => {
+                  if (el) iframeRefs.current.set(channelId, el);
+                  else iframeRefs.current.delete(channelId);
+                }}
                 channelId={channelId}
                 channelName={channelNames[channelId] || channelId}
                 isFocused={i === focusedIndex}
-                preferredQuality={preferredWarmQuality}
                 cellStyle={cellStyle}
-                onFocus={() => setFocusedIndex(i)}
+                onFocus={() => handleFocus(i)}
                 onRemove={() => handleRemoveChannel(i)}
               />
             );
@@ -314,27 +353,12 @@ function MultiviewGridInner({ initialChannelIds, initialLayout, embedded }: Mult
       )}
     </div>
   );
-
-  if (embedded) return grid;
-
-  return (
-    <PlayerOverlay
-      title="Multiview"
-      subtitle={`${channelIds.length} channel${channelIds.length === 1 ? '' : 's'} · ${layout}`}
-    >
-      {grid}
-    </PlayerOverlay>
-  );
 }
 
 // --------------------------------------------------------------------------
-// Public export — wraps with WarmDeckProvider
+// Public export
 // --------------------------------------------------------------------------
 
 export function MultiviewGrid(props: MultiviewGridProps) {
-  return (
-    <WarmDeckProvider>
-      <MultiviewGridInner {...props} />
-    </WarmDeckProvider>
-  );
+  return <MultiviewGridInner {...props} />;
 }
