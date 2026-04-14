@@ -1,0 +1,49 @@
+# Mutagen project config for foundry-iptv → foundry-01:/srv/dev/foundry-iptv
+#
+# Purpose: keep Next.js build artifacts, Rust target/, Android build/,
+# APK outputs, and vendor dirs out of the sync. This repo has the biggest
+# build-artifact footprint (Next + Rust workspace + Android Gradle) and
+# was the primary culprit behind the CPU/network pegging that forced the
+# mutagen-focus rotator hotfix.
+#
+# To pick up these ignores on the existing session:
+#   1. mutagen sync terminate foundry-iptv
+#   2. cd /home/jack/projects/foundry-iptv && mutagen project start
+
+sync:
+  foundry-iptv:
+    alpha: /home/jack/projects/foundry-iptv
+    beta: jack@10.0.0.3:/srv/dev/foundry-iptv
+    ignore:
+      vcs: true
+      paths:
+        # Next.js
+        - .next
+        - .turbo
+        - .vercel
+        # Node
+        - node_modules
+        - coverage
+        - tsconfig.tsbuildinfo
+        # Rust workspace (clients/foundry-core, foundry-tv, etc.)
+        - clients/**/target
+        - target
+        # Android (clients/foundry-android)
+        - clients/foundry-android/.gradle
+        - clients/foundry-android/build
+        - clients/foundry-android/**/build
+        - clients/foundry-android/local.properties
+        - clients/foundry-android/.idea
+        - clients/foundry-android/app/release
+        - clients/foundry-android/app/debug
+        - "**/*.apk"
+        - "**/*.aab"
+        # Tooling
+        - .code-review-graph
+        - .codex
+        - dist
+        - out
+    mode: two-way-safe
+    permissions:
+      defaultFileMode: 0644
+      defaultDirectoryMode: 0755
