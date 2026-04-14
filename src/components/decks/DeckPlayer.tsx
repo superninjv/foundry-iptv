@@ -13,16 +13,19 @@ import { useRouter } from 'next/navigation';
 import PlayerOverlay from '@/components/player/PlayerOverlay';
 import PlayerControls from '@/components/player/PlayerControls';
 import SkipCommercialsToggle from '@/components/decks/SkipCommercialsToggle';
-import { ChannelPicker } from '@/components/multiview/ChannelPicker';
+import { ChannelPicker, type PickerSelection } from '@/components/multiview/ChannelPicker';
 import { MultiviewGrid } from '@/components/multiview/MultiviewGrid';
 import type { Deck, DeckViewMode, DeckLayout, DeckEntry } from '@/lib/decks/db';
 import { EditIcon, AddIcon } from '@/components/icons';
-import { WarmDeckProvider, useWarmStream, useWarmDeck } from '@/components/decks/WarmDeckProvider';
+import { WarmDeckProvider } from '@/components/decks/WarmDeckProvider';
 
 interface DeckPlayerProps {
   initialDeck: Deck;
   channelNames?: Record<string, string>;
   onToggleEditor?: () => void;
+  /** When false, fade out the floating Save-preset button alongside the rest
+   *  of the chrome. Driven by DeckPage's idle auto-hide timer. */
+  chromeVisible?: boolean;
 }
 
 function EditDeckButton({ onClick }: { onClick: () => void }) {
@@ -71,141 +74,34 @@ interface SynthPreset {
 }
 
 // --------------------------------------------------------------------------
-// WarmDeckTile — one grid entry that uses the warm pool
-// --------------------------------------------------------------------------
-
-function WarmDeckTile({
-  channelId,
-  isActive,
-}: {
-  channelId: string;
-  isActive: boolean;
-}) {
-  const { attachSlot } = useWarmStream(channelId, isActive);
-  const slotRef = useRef<HTMLDivElement | null>(null);
-
-  const setSlotRef = useCallback(
-    (el: HTMLDivElement | null) => {
-      slotRef.current = el;
-      attachSlot(el);
-    },
-    [attachSlot],
-  );
-
-  return (
-    <div
-      ref={setSlotRef}
-      className="h-full w-full"
-      style={{ backgroundColor: '#000', overflow: 'hidden' }}
-    />
-  );
-}
-
-// --------------------------------------------------------------------------
-// SingleChannelView — single mode, wraps WarmDeckTile with overlay/controls
-// --------------------------------------------------------------------------
-
-function SingleChannelView({
-  entry,
-  entryIndex,
-  totalEntries,
-  deckName,
-  channelNames,
-  skipCommercials,
-  deckId,
-  onBack,
-  onJump,
-  entries,
-  onToggleEditor,
-  onAddChannel,
-}: {
-  entry: DeckEntry;
-  entryIndex: number;
-  totalEntries: number;
-  deckName: string;
-  channelNames: Record<string, string>;
-  skipCommercials: boolean;
-  deckId: number;
-  onBack: () => void;
-  onJump: (i: number) => void;
-  entries: DeckEntry[];
-  onToggleEditor?: () => void;
-  onAddChannel: () => void;
-}) {
-  // PlayerControls wants an HTMLVideoElement ref. The real element is owned
-  // by WarmDeckProvider's pool — grab it from there and keep this ref in sync
-  // so scrub/pause/volume all drive the live <video>.
-  const { getVideoElement } = useWarmDeck();
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    // Handle may not exist yet on first mount; poll briefly until it does.
-    const tryAttach = () => {
-      if (cancelled) return;
-      const el = getVideoElement(entry.channelId);
-      if (el) {
-        videoRef.current = el;
-      } else {
-        setTimeout(tryAttach, 100);
-      }
-    };
-    tryAttach();
-    return () => {
-      cancelled = true;
-      videoRef.current = null;
-    };
-  }, [entry.channelId, getVideoElement]);
-
-  return (
-    <PlayerOverlay
-      title={channelNames[entry.channelId] || entry.channelId}
-      subtitle={`${deckName} · ${entryIndex + 1} of ${totalEntries}`}
-      onBack={onBack}
-      metaLeft={
-        <EntryPillStrip
-          entries={entries}
-          activeIndex={entryIndex}
-          onJump={onJump}
-          channelNames={channelNames}
-        />
-      }
-      controls={
-        <PlayerControls
-          videoRef={videoRef}
-          isLive
-        />
-      }
-      actionsRight={
-        <>
-          <SkipCommercialsToggle deckId={deckId} initialValue={skipCommercials} variant="icon" />
-          <AddChannelButton onClick={onAddChannel} />
-          {onToggleEditor && <EditDeckButton onClick={onToggleEditor} />}
-        </>
-      }
-    >
-      <div className="h-full w-full" style={{ minHeight: '60vh', backgroundColor: '#000' }}>
-        <WarmDeckTile channelId={entry.channelId} isActive />
-      </div>
-    </PlayerOverlay>
-  );
-}
-
-// --------------------------------------------------------------------------
-// DeckPlayerInner — consumes WarmDeckProvider context
+// DeckPlayerInner
 // --------------------------------------------------------------------------
 
 function DeckPlayerInner({
   initialDeck,
   channelNames = {},
   onToggleEditor,
+  chromeVisible = true,
 }: DeckPlayerProps) {
   const router = useRouter();
   const [viewMode, setViewMode] = useState<DeckViewMode>(initialDeck.viewMode);
+  // DeckPage has an external Single/Multi toolbar that updates the server-side
+  // viewMode and re-fetches — mirror that into local state so the overlay swap
+  // happens without a full page refresh.
+  useEffect(() => {
+    setViewMode(initialDeck.viewMode);
+  }, [initialDeck.viewMode]);
   const [cursorIndex, setCursorIndex] = useState<number>(initialDeck.cursorIndex);
   const [savingPreset, setSavingPreset] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [addBusy, setAddBusy] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Wrapper around the always-mounted MultiviewGrid. In single mode we reach
+  // into this subtree to hide the 3 non-active tiles and click the active one
+  // so MultiviewGrid's own focus/mute machinery hands audio to it. Nothing
+  // unmounts across mode flips — iframes + pool registrations stay alive.
+  const mvWrapRef = useRef<HTMLDivElement>(null);
+  const singleVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // Gesture priming: Fire TV requires a user gesture before play() succeeds
   // even for muted video. On first keydown we call play() on all warm handles
@@ -217,7 +113,7 @@ function DeckPlayerInner({
   const { entries, presets, skipCommercials, id: deckId, name: deckName } = initialDeck;
 
   const handleAddChannel = useCallback(
-    async (channelId: string) => {
+    async (item: PickerSelection) => {
       setShowPicker(false);
       if (addBusy) return;
       setAddBusy(true);
@@ -225,7 +121,13 @@ function DeckPlayerInner({
         const res = await fetch(`/api/decks/${deckId}/entries`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ channelId, ttl: '24h' }),
+          body: JSON.stringify({
+            channelId: item.id,
+            ttl: '24h',
+            contentType: item.contentType,
+            vodStreamId: item.vodStreamId,
+            vodMediaType: item.vodMediaType,
+          }),
         });
         if (res.ok) router.refresh();
       } finally {
@@ -286,8 +188,14 @@ function DeckPlayerInner({
   useEffect(() => {
     function handler(ev: KeyboardEvent) {
       const target = ev.target as HTMLElement | null;
-      if (target && target !== containerRef.current && containerRef.current?.contains(target)) {
-        return;
+      // Only let text-entry elements swallow arrow keys. Previously we bailed
+      // for any descendant of the deck container, which meant focusing any
+      // chrome button (e.g. the add-channel button) disabled channel-cycling.
+      if (target) {
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) {
+          return;
+        }
       }
 
       // Prime autoplay gesture on first keydown (Fire TV unlock)
@@ -350,47 +258,94 @@ function DeckPlayerInner({
     setCursorIndex(i);
   }, []);
 
-  // Measure swap latency: when the active video fires 'playing', measure from
-  // the last keydown mark.
+  // Drive single/multi presentation by mutating the always-mounted MultiviewGrid.
+  // Single mode: hide 3 of 4 tiles and span the active one across the grid;
+  //              click the active tile so MultiviewGrid promotes it (audio on).
+  // Multi mode:  clear the styles so the grid lays out normally.
+  // The grid never remounts across mode flips, so iframes + pool state persist.
   useEffect(() => {
-    if (viewMode !== 'single') return;
-    const safeIndex = Math.min(cursorIndex, entries.length - 1);
-    const entry = entries[safeIndex];
-    if (!entry) return;
+    const root = mvWrapRef.current;
+    if (!root) return;
+    let cancelled = false;
+    let rafId: number | null = null;
 
-    function onPlaying(this: HTMLVideoElement) {
-      try {
-        performance.mark('deck:playing');
-        performance.measure('deck:swap', 'deck:keydown', 'deck:playing');
-        const [m] = performance.getEntriesByName('deck:swap', 'measure');
-        if (m) {
-          console.log(`[warm-deck] swap=${Math.round(m.duration)}ms`);
-          performance.clearMarks('deck:keydown');
-          performance.clearMarks('deck:playing');
-          performance.clearMeasures('deck:swap');
-        }
-      } catch {
-        // marks may not exist if no keydown happened yet
+    const apply = () => {
+      if (cancelled) return;
+      const grid = root.querySelector<HTMLElement>('[style*="grid-template-columns"]');
+      const tiles = grid
+        ? (Array.from(grid.children).filter(
+            (el) => (el as HTMLElement).querySelector('iframe'),
+          ) as HTMLElement[])
+        : [];
+      if (tiles.length === 0) {
+        // Iframes not in the DOM yet — try again next frame.
+        rafId = requestAnimationFrame(apply);
+        return;
       }
-    }
 
-    // Find the <video> managed by the warm pool — it's inside the tile slot.
-    // We listen on the document for 'playing' from the correct channel's video
-    // by grabbing it from the slot div after a raf.
-    const raf = requestAnimationFrame(() => {
-      // The warm provider places the video as a child of the slot div with
-      // data-channel or we can locate it by scanning the active tile.
-      // Simplest: query the warm pool video directly via a synthetic attribute.
-      const video = document.querySelector<HTMLVideoElement>(
-        `[data-warm-channel="${entry.channelId}"]`,
-      );
-      video?.addEventListener('playing', onPlaying, { once: true });
-    });
-
-    return () => {
-      cancelAnimationFrame(raf);
+      if (viewMode === 'single') {
+        const idx = Math.min(cursorIndex, tiles.length - 1);
+        // Leave non-active tiles in their normal grid cells so Firefox/Silk
+        // don't pause or throttle them. Lift the active tile into a full-size
+        // absolute overlay on top, using the always-`relative` PlayerOverlay
+        // wrapper as the positioning context. Every iframe stays in-viewport
+        // — only the active one is actually visible to the user.
+        tiles.forEach((tile, i) => {
+          if (i === idx) {
+            tile.style.position = 'absolute';
+            tile.style.top = '0';
+            tile.style.left = '0';
+            tile.style.right = '0';
+            tile.style.bottom = '0';
+            tile.style.width = '100%';
+            tile.style.height = '100%';
+            tile.style.zIndex = '5';
+            tile.style.gridColumn = '';
+            tile.style.gridRow = '';
+          } else {
+            tile.style.position = '';
+            tile.style.top = '';
+            tile.style.left = '';
+            tile.style.right = '';
+            tile.style.bottom = '';
+            tile.style.width = '';
+            tile.style.height = '';
+            tile.style.zIndex = '';
+            tile.style.gridColumn = '';
+            tile.style.gridRow = '';
+          }
+        });
+        // Click the active tile so MultiviewGrid's handleFocus sets focus +
+        // posts mute messages to every iframe (unmuting just this one).
+        tiles[idx]?.click();
+        // Grab the <video> from the active iframe for PlayerControls. Same
+        // origin, so contentDocument access is fine.
+        const iframe = tiles[idx]?.querySelector<HTMLIFrameElement>('iframe');
+        const vid = iframe?.contentDocument?.querySelector<HTMLVideoElement>('video') ?? null;
+        singleVideoRef.current = vid;
+      } else {
+        tiles.forEach((tile) => {
+          tile.style.position = '';
+          tile.style.top = '';
+          tile.style.left = '';
+          tile.style.right = '';
+          tile.style.bottom = '';
+          tile.style.width = '';
+          tile.style.height = '';
+          tile.style.zIndex = '';
+          tile.style.gridColumn = '';
+          tile.style.gridRow = '';
+        });
+        singleVideoRef.current = null;
+      }
     };
-  }, [cursorIndex, viewMode, entries]);
+
+    apply();
+    return () => {
+      cancelled = true;
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [viewMode, cursorIndex]);
 
   // ---- Empty deck --------------------------------------------------------
 
@@ -443,55 +398,25 @@ function DeckPlayerInner({
     );
   }
 
-  // ---- Single mode -------------------------------------------------------
+  // ---- Render ------------------------------------------------------------
+  //
+  // ONE tree for both modes. MultiviewGrid is always mounted; single mode is
+  // just a CSS-driven zoom into the focused tile + a different overlay chrome.
+  // Iframes and their pool registrations persist across mode flips, so the
+  // transition is instant and no streams get evicted server-side.
+  //
+  // In single mode the grid shows synthPreset (deck channels in entry order),
+  // so flipping between modes doesn't change the grid's key / channel set.
 
-  if (viewMode === 'single') {
-    const safeIndex = Math.min(cursorIndex, entries.length - 1);
-    const entry = entries[safeIndex];
-
-    return (
-      <div
-        ref={containerRef}
-        tabIndex={-1}
-        className="relative h-full w-full outline-none"
-        style={{ minHeight: '60vh' }}
-      >
-        <SingleChannelView
-          entry={entry}
-          entryIndex={safeIndex}
-          totalEntries={entries.length}
-          deckName={deckName}
-          channelNames={channelNames}
-          skipCommercials={skipCommercials}
-          deckId={deckId}
-          onBack={handleBack}
-          onJump={handleJump}
-          entries={entries}
-          onToggleEditor={onToggleEditor}
-          onAddChannel={() => setShowPicker(true)}
-        />
-        {showPicker && (
-          <ChannelPicker
-            onSelect={handleAddChannel}
-            onClose={() => setShowPicker(false)}
-            excludeIds={entries.map((e) => e.channelId)}
-          />
-        )}
-      </div>
-    );
-  }
-
-  // ---- Multi mode --------------------------------------------------------
-
-  const activePreset: SynthPreset | null =
-    presets.length > 0
+  const gridPreset: SynthPreset | null =
+    viewMode === 'multi' && presets.length > 0
       ? {
           layout: presets[cursorIndex % presets.length].layout,
           channelIds: presets[cursorIndex % presets.length].channelIds,
         }
       : synthPreset;
 
-  if (!activePreset) {
+  if (!gridPreset) {
     return (
       <div className="flex h-full items-center justify-center" style={{ minHeight: '60vh' }}>
         <p style={{ color: 'var(--fg-muted)' }}>No presets available.</p>
@@ -500,6 +425,10 @@ function DeckPlayerInner({
   }
 
   const totalPresets = presets.length || (synthPreset ? 1 : 0);
+  const safeIndex = Math.min(cursorIndex, entries.length - 1);
+  const singleEntry = entries[safeIndex];
+  const singleTitle =
+    (singleEntry && (channelNames[singleEntry.channelId] || singleEntry.channelId)) || '';
 
   return (
     <div
@@ -509,11 +438,24 @@ function DeckPlayerInner({
       style={{ minHeight: '60vh' }}
     >
       <PlayerOverlay
-        title={`Multiview · ${activePreset.layout}`}
-        subtitle={totalPresets > 1 ? `Preset ${(cursorIndex % totalPresets) + 1} of ${totalPresets}` : undefined}
+        title={viewMode === 'single' ? singleTitle : `Multiview · ${gridPreset.layout}`}
+        subtitle={
+          viewMode === 'single'
+            ? `${deckName} · ${safeIndex + 1} of ${entries.length}`
+            : totalPresets > 1
+              ? `Preset ${(cursorIndex % totalPresets) + 1} of ${totalPresets}`
+              : undefined
+        }
         onBack={handleBack}
         metaLeft={
-          totalPresets > 1 ? (
+          viewMode === 'single' ? (
+            <EntryPillStrip
+              entries={entries}
+              activeIndex={safeIndex}
+              onJump={handleJump}
+              channelNames={channelNames}
+            />
+          ) : totalPresets > 1 ? (
             <div className="flex gap-2">
               {Array.from({ length: totalPresets }).map((_, i) => (
                 <button
@@ -533,29 +475,40 @@ function DeckPlayerInner({
             </div>
           ) : null
         }
+        controls={
+          viewMode === 'single' ? <PlayerControls videoRef={singleVideoRef} isLive /> : undefined
+        }
         actionsRight={
           <>
-            <SkipCommercialsToggle deckId={initialDeck.id} initialValue={skipCommercials} variant="icon" />
+            <SkipCommercialsToggle deckId={deckId} initialValue={skipCommercials} variant="icon" />
             <AddChannelButton onClick={() => setShowPicker(true)} />
             {onToggleEditor && <EditDeckButton onClick={onToggleEditor} />}
           </>
         }
       >
-        <MultiviewGrid
-          key={`${activePreset.layout}-${activePreset.channelIds.join(',')}`}
-          initialChannelIds={activePreset.channelIds}
-          initialLayout={activePreset.layout}
-          embedded
-        />
-        {presets.length === 0 && synthPreset && (
+        <div ref={mvWrapRef} className="h-full w-full">
+          <MultiviewGrid
+            key={`${gridPreset.layout}-${gridPreset.channelIds.join(',')}`}
+            initialChannelIds={gridPreset.channelIds}
+            initialLayout={gridPreset.layout}
+            embedded
+            // Route multi's own Add Channel button through the real deck
+            // API, so additions persist as deck entries instead of living
+            // only inside MultiviewGrid's local state.
+            onAddChannel={handleAddChannel}
+          />
+        </div>
+        {viewMode === 'multi' && presets.length === 0 && synthPreset && (
           <button
             onClick={handleSavePreset}
             disabled={savingPreset}
-            className="absolute right-4 top-20 z-50 rounded-lg px-4 py-2 font-medium"
+            className="absolute right-4 top-20 z-50 rounded-lg px-4 py-2 font-medium transition-opacity duration-200"
             style={{
               backgroundColor: 'var(--accent)',
               color: 'var(--bg)',
               minHeight: '44px',
+              opacity: chromeVisible ? 1 : 0,
+              pointerEvents: chromeVisible ? 'auto' : 'none',
             }}
           >
             {savingPreset ? 'Saving...' : 'Save preset'}

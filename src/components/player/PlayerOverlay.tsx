@@ -1,4 +1,9 @@
 'use client';
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Foundry IPTV Contributors
+// This file is part of Foundry IPTV, licensed under AGPL-3.0.
+// See LICENSE file in the project root.
+
 
 // nav:
 //   Mouse/touch/keydown → wake overlay, reset 3s hide timer
@@ -131,7 +136,11 @@ export default function PlayerOverlay({
         className="absolute inset-0 z-10 flex flex-col justify-between transition-opacity duration-300"
         style={{
           opacity: visible ? 1 : 0,
-          pointerEvents: visible ? 'auto' : 'none',
+          // Backdrop is visual only — clicks in the empty middle must fall
+          // through to the content underneath (e.g. MultiviewGrid's empty-cell
+          // "Add Channel" button). The top/bottom chrome children re-enable
+          // pointer events on themselves below.
+          pointerEvents: 'none',
         }}
       >
         <div
@@ -139,6 +148,7 @@ export default function PlayerOverlay({
           style={{
             background: 'linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, transparent 100%)',
             paddingLeft: 'max(1.5rem, calc(4rem + 1rem))',
+            pointerEvents: visible ? 'auto' : 'none',
           }}
         >
           {onBack && (
@@ -183,6 +193,7 @@ export default function PlayerOverlay({
           style={{
             background: 'linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 100%)',
             paddingLeft: 'max(1.5rem, calc(4rem + 1rem))',
+            pointerEvents: visible ? 'auto' : 'none',
           }}
           onKeyDown={handleMetaKey}
         >
@@ -191,12 +202,6 @@ export default function PlayerOverlay({
         </div>
       </div>
 
-      <style jsx>{`
-        :global(.overlay-focus:focus-visible) {
-          outline: 2px solid var(--accent);
-          outline-offset: 2px;
-        }
-      `}</style>
     </div>
   );
 }

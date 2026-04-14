@@ -1,22 +1,21 @@
 'use client';
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Foundry IPTV Contributors
+// This file is part of Foundry IPTV, licensed under AGPL-3.0.
+// See LICENSE file in the project root.
+
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { TooltipProvider, Tooltip } from '@/components/ui/Tooltip';
+import { useEffect, useMemo, useState } from 'react';
+import SpatialNavProvider from '@/components/tv/SpatialNavProvider';
 import {
   NavLiveIcon,
   NavGuideIcon,
-  NavVodIcon,
-  NavSeriesIcon,
+  NavOnDemandIcon,
   NavSearchIcon,
-  NavDecksIcon,
-  NavMultiviewIcon,
-  NavListsIcon,
+  NavMyStuffIcon,
   NavSettingsIcon,
-  NavNotificationsIcon,
-  NavNowPlayingIcon,
-  NavUserMenuIcon,
   NavAdminIcon,
 } from '@/components/icons';
 
@@ -31,20 +30,12 @@ interface NavItem {
 
 function buildNavItems(isAdmin: boolean): NavItem[] {
   const items: NavItem[] = [
-    // Original 9 items
     { label: 'Live', href: '/live', icon: <NavLiveIcon /> },
     { label: 'Guide', href: '/guide', icon: <NavGuideIcon /> },
-    { label: 'VOD', href: '/vod', icon: <NavVodIcon /> },
-    { label: 'Series', href: '/series', icon: <NavSeriesIcon /> },
+    { label: 'On Demand', href: '/on-demand', icon: <NavOnDemandIcon /> },
     { label: 'Search', href: '/search', icon: <NavSearchIcon /> },
-    { label: 'Decks', href: '/decks', icon: <NavDecksIcon /> },
-    { label: 'Multiview', href: '/multiview', icon: <NavMultiviewIcon /> },
-    { label: 'Lists', href: '/lists', icon: <NavListsIcon /> },
+    { label: 'My Stuff', href: '/my-stuff', icon: <NavMyStuffIcon /> },
     { label: 'Settings', href: '/settings', icon: <NavSettingsIcon /> },
-    // 3 new items
-    { label: 'Notifications', href: '/notifications', icon: <NavNotificationsIcon /> },
-    { label: 'Now Playing', href: '/decks', icon: <NavNowPlayingIcon /> },
-    { label: 'Account', href: '/settings', icon: <NavUserMenuIcon /> },
   ];
 
   if (isAdmin) {
@@ -54,8 +45,6 @@ function buildNavItems(isAdmin: boolean): NavItem[] {
   return items;
 }
 
-// TODO(Track 1): watch pages should focus their player container on mount so
-// D-pad input routes to the player immediately after sidebar ArrowRight blur.
 export default function AppShell({
   children,
   isAdmin,
@@ -64,7 +53,6 @@ export default function AppShell({
   isAdmin: boolean;
 }) {
   const pathname = usePathname();
-  const navRef = useRef<HTMLElement>(null);
   const [navHidden, setNavHidden] = useState(false);
 
   const navItems = useMemo(() => buildNavItems(isAdmin), [isAdmin]);
@@ -79,7 +67,6 @@ export default function AppShell({
   }
 
   // Cursor auto-hide: hide after 3s of no mousemove, restore on movement.
-  // Skip on touch/hover-none devices (Fire TV remote, phones).
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const isCoarse = window.matchMedia('(pointer: coarse)').matches;
@@ -105,18 +92,21 @@ export default function AppShell({
     };
   }, []);
 
+  // Fullscreen nav: start hidden, reveal on user input (mouse/touch/key), then
+  // auto-hide after 3s of idle. Avoids flashing the nav bar when a player page
+  // first loads.
   useEffect(() => {
     if (!isFullscreen) {
       setNavHidden(false);
       return;
     }
+    setNavHidden(true);
     let timer: ReturnType<typeof setTimeout> | null = null;
     function reset() {
       if (timer) clearTimeout(timer);
       setNavHidden(false);
       timer = setTimeout(() => setNavHidden(true), 3000);
     }
-    reset();
     window.addEventListener('mousemove', reset);
     window.addEventListener('touchstart', reset);
     window.addEventListener('keydown', reset);
@@ -128,58 +118,24 @@ export default function AppShell({
     };
   }, [isFullscreen]);
 
+  // Escape toggles nav on fullscreen routes
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== 'Escape') return;
       if (!isFullscreen) return;
       e.preventDefault();
       e.stopPropagation();
-      setNavHidden((hidden) => {
-        const next = !hidden;
-        if (!next) {
-          requestAnimationFrame(() => {
-            const first = navRef.current?.querySelector<HTMLElement>('[data-nav-item]');
-            first?.focus();
-          });
-        }
-        return next;
-      });
+      setNavHidden((hidden) => !hidden);
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [isFullscreen]);
 
-  function onNavKeyDown(e: React.KeyboardEvent<HTMLElement>) {
-    const key = e.key;
-    if (key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'ArrowRight') return;
-    if (key === 'ArrowRight') {
-      e.preventDefault();
-      (document.activeElement as HTMLElement | null)?.blur();
-      return;
-    }
-    const items = Array.from(
-      navRef.current?.querySelectorAll<HTMLElement>('[data-nav-item]') ?? [],
-    );
-    if (items.length === 0) return;
-    const current = document.activeElement as HTMLElement | null;
-    const idx = current ? items.indexOf(current) : -1;
-    e.preventDefault();
-    let nextIdx: number;
-    if (key === 'ArrowDown') {
-      nextIdx = idx < 0 ? 0 : (idx + 1) % items.length;
-    } else {
-      nextIdx = idx < 0 ? items.length - 1 : (idx - 1 + items.length) % items.length;
-    }
-    items[nextIdx]?.focus();
-  }
-
   return (
-    <TooltipProvider>
+    <SpatialNavProvider>
       <div className="flex min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-        {/* Desktop sidebar — always collapsed, icons only (no hover expand for TV compatibility) */}
+        {/* Desktop sidebar — always collapsed, icons only */}
         <nav
-          ref={navRef}
-          onKeyDown={onNavKeyDown}
           className="fixed left-0 top-0 z-40 hidden h-full flex-col border-r md:flex"
           style={{
             width: '4rem',
@@ -191,8 +147,11 @@ export default function AppShell({
             transition: 'transform 200ms ease, opacity 200ms ease',
           }}
         >
-          <div className="flex h-14 items-center justify-center border-b" style={{ borderColor: 'var(--border)' }}>
-            <span className="text-sm font-bold" style={{ color: 'var(--accent)' }}>
+          <div
+            className="flex h-14 items-center justify-center border-b"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            <span className="text-sm font-bold" style={{ color: 'var(--accent-warm)' }}>
               F
             </span>
           </div>
@@ -201,66 +160,37 @@ export default function AppShell({
             {navItems.map((item) => {
               const active = isActive(item.href);
               return (
-                <Tooltip key={`${item.href}-${item.label}`} label={item.label} side="right">
-                  <Link
-                    href={item.href}
-                    prefetch={false}
-                    data-nav-item
-                    tabIndex={0}
-                    className="foundry-nav-item flex items-center justify-center rounded-lg py-3"
-                    style={{
-                      color: active ? 'var(--accent)' : 'var(--fg-muted)',
-                      backgroundColor: active ? 'rgba(255, 149, 72, 0.1)' : 'transparent',
-                      minHeight: '48px',
-                    }}
-                    title={item.label}
-                  >
-                    <span className="shrink-0">{item.icon}</span>
-                  </Link>
-                </Tooltip>
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  prefetch={false}
+                  data-nav-item
+                  tabIndex={0}
+                  className="nav-focus flex items-center justify-center rounded-lg py-3"
+                  style={{
+                    color: active ? 'var(--accent)' : 'var(--fg-muted)',
+                    backgroundColor: 'transparent',
+                    minHeight: '48px',
+                    transition: 'background-color 150ms ease, color 150ms ease',
+                    borderLeft: active ? '3px solid var(--accent)' : '3px solid transparent',
+                  }}
+                  title={item.label}
+                >
+                  <span className="shrink-0">{item.icon}</span>
+                </Link>
               );
             })}
           </div>
-          <style>{`.foundry-nav-item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:0.5rem;}`}</style>
         </nav>
 
-        {/* Main content. On fullscreen routes the sidebar overlays the player
-            (no left margin) so the video can fill the viewport edge to edge. */}
+        {/* Main content */}
         <main
           className={isFullscreen ? 'flex-1' : 'flex-1 md:ml-16'}
           style={{ minHeight: '100vh' }}
         >
           {children}
         </main>
-
-        {/* Mobile bottom nav */}
-        <nav
-          className="fixed bottom-0 left-0 right-0 z-40 flex border-t md:hidden"
-          style={{
-            backgroundColor: 'var(--bg-raised)',
-            borderColor: 'var(--border)',
-          }}
-        >
-          {navItems.map((item) => {
-            const active = isActive(item.href);
-            return (
-              <Link
-                key={`${item.href}-${item.label}`}
-                href={item.href}
-                prefetch={false}
-                className="flex flex-1 flex-col items-center gap-1 py-3"
-                style={{
-                  color: active ? 'var(--accent)' : 'var(--fg-muted)',
-                  minHeight: '48px',
-                }}
-              >
-                {item.icon}
-                <span className="text-xs">{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
       </div>
-    </TooltipProvider>
+    </SpatialNavProvider>
   );
 }
