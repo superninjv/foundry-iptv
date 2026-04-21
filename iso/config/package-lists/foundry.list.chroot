@@ -1,0 +1,21 @@
+# Docker is installed via 0050-docker-repo.hook.chroot
+# (needs ca-certificates before HTTPS fetch, so hook handles the full flow)
+
+# Networking
+avahi-daemon
+libnss-mdns
+openssh-server
+curl
+iptables
+net-tools
+
+# Compression (for loading baked images)
+zstd
+
+# System
+openssl
+systemd-timesyncd
+sudo
+htop
+lsof
+rsync

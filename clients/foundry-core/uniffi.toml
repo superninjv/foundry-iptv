@@ -1,0 +1,9 @@
+# uniffi configuration for foundry-core.
+# The UDL file declares the public surface exposed to Kotlin via JNI.
+[bindings.kotlin]
+package_name = "com.foundry.iptv.core"
+# Override the native library name. uniffi's default is `uniffi_<namespace>`
+# (i.e. `uniffi_foundry_core`), but our crate produces `libfoundry_core.so`
+# via cargo's standard cdylib naming. Tell the generated bindings to look
+# for that name instead so JNA's Native.load() finds the library.
+cdylib_name = "foundry_core"

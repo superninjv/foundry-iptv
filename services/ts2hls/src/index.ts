@@ -11,6 +11,7 @@ import {
   startIdleCleanup,
   stopIdleCleanup,
   validateChannelUrl,
+  changeQuality,
 } from './session.js';
 import type { CreateSessionRequest, CreateSessionResponse, Quality } from './types.js';
 import { VALID_QUALITIES } from './types.js';
@@ -106,6 +107,30 @@ app.post('/session', async (req, res) => {
     res.status(201).json(response);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to create session';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Quality hot-swap
+app.post('/session/:sid/quality', async (req, res) => {
+  if (!requireSharedSecret(req, res)) return;
+  const { sid } = req.params;
+  const { quality } = req.body as { quality?: string };
+
+  if (!quality || !VALID_QUALITIES.includes(quality as Quality)) {
+    res.status(400).json({ error: `quality must be one of: ${VALID_QUALITIES.join(', ')}` });
+    return;
+  }
+
+  try {
+    const result = await changeQuality(sid, quality as Quality);
+    if (!result) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+    res.json({ ok: true, hlsUrl: result.hlsUrl });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Quality change failed';
     res.status(500).json({ error: message });
   }
 });

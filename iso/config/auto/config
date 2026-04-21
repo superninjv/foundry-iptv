@@ -1,0 +1,4 @@
+#!/bin/sh
+# Auto-configuration for live-build
+# This is called by `lb config` when run from the iso/ directory.
+# The actual config is done in build.sh; this file exists as a convention.

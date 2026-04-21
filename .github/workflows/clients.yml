@@ -1,0 +1,134 @@
+# TODO: Add foundry-android job once the NDK cross-compile setup is ready.
+#       Gradle assembleDebug requires Android SDK + NDK on the runner.
+
+name: Native Clients CI
+
+on:
+  push:
+    paths:
+      - 'clients/**'
+      - '.github/workflows/clients.yml'
+  pull_request:
+    paths:
+      - 'clients/**'
+      - '.github/workflows/clients.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # foundry-core: check, test, clippy
+  # ---------------------------------------------------------------------------
+  foundry-core-check:
+    name: foundry-core (check / test / clippy)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            clients/target
+          key: ${{ runner.os }}-cargo-core-${{ hashFiles('clients/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-core-
+
+      - name: cargo check (workspace)
+        working-directory: clients
+        run: cargo check --workspace
+
+      - name: cargo test (foundry-core)
+        working-directory: clients
+        run: cargo test -p foundry-core
+
+      - name: cargo clippy (foundry-core)
+        working-directory: clients
+        run: cargo clippy -p foundry-core -- -D warnings
+
+  # ---------------------------------------------------------------------------
+  # foundry-tv: build for x86_64 and aarch64
+  # ---------------------------------------------------------------------------
+  foundry-tv-build:
+    name: foundry-tv (${{ matrix.target }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable + target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            clients/target
+          key: ${{ runner.os }}-cargo-tv-${{ matrix.target }}-${{ hashFiles('clients/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-tv-${{ matrix.target }}-
+
+      - name: Install GStreamer dev packages (x86_64)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libfontconfig1-dev \
+            libxkbcommon-dev \
+            pkg-config
+
+      - name: Install GStreamer dev packages + aarch64 cross toolchain
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu \
+            libgstreamer1.0-dev:arm64 \
+            libgstreamer-plugins-base1.0-dev:arm64 \
+            libfontconfig1-dev:arm64 \
+            libxkbcommon-dev:arm64 \
+            pkg-config || true
+          # Enable arm64 packages — may fail in standard runners; non-fatal.
+          sudo dpkg --add-architecture arm64 || true
+          sudo apt-get update -qq || true
+
+      - name: Set cross-compile env (aarch64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_SYSROOT_DIR=/usr/aarch64-linux-gnu" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_ALLOW_CROSS=1" >> "$GITHUB_ENV"
+
+      - name: cargo build (foundry-tv, ${{ matrix.target }})
+        working-directory: clients
+        run: cargo build -p foundry-tv --target ${{ matrix.target }}
+        continue-on-error: true   # GStreamer cross-compile is best-effort in CI
+
+      - name: Upload binary artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: foundry-tv-${{ matrix.target }}
+          path: clients/target/${{ matrix.target }}/debug/foundry-tv

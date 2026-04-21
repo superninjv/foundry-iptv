@@ -1,0 +1,25 @@
+# Rust build artifacts
+target/
+
+# Editor temporaries
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Android
+local.properties
+.gradle/
+build/
+*.iml
+.idea/
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Generated JNI libraries (built from Rust, not stored in git)
+foundry-android/jniLibs/arm64-v8a/
+foundry-android/jniLibs/armeabi-v7a/
+foundry-android/jniLibs/x86_64/
+foundry-android/jniLibs/jar/

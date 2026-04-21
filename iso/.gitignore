@@ -1,0 +1,10 @@
+# live-build output
+*.iso
+SHA256SUMS
+.build/
+binary/
+cache/
+chroot/
+local/
+config/includes.chroot/opt/foundry/
+!config/includes.chroot/opt/foundry/.gitkeep

@@ -23,8 +23,6 @@ import { createHash } from 'node:crypto';
 import { Pool } from 'pg';
 
 const THREADFIN_URL = process.env.THREADFIN_URL || 'http://threadfin.foundry.test';
-const RAW_M3U_URL = process.env.RAW_M3U_URL || `${THREADFIN_URL}/raw/prime.m3u`;
-const RAW_XMLTV_URL = process.env.RAW_XMLTV_URL || `${THREADFIN_URL}/raw/prime.xml`;
 
 const connString = (process.env.DATABASE_URL || '')
   .replace(/[?&]sslmode=[^&]*/g, '')
@@ -36,6 +34,21 @@ const ssl =
     : false;
 
 const pool = new Pool({ connectionString: connString, ssl });
+
+/** Read a config key from iptv_config, falling back to an env var. */
+async function getConfigOrEnv(key: string, envVar: string): Promise<string> {
+  try {
+    const res = await pool.query<{ value: string }>(
+      'SELECT value FROM iptv_config WHERE key = $1',
+      [key],
+    );
+    const dbVal = res.rows[0]?.value;
+    if (dbVal) return dbVal;
+  } catch {
+    // iptv_config may not exist yet on very first run before 009 migration
+  }
+  return process.env[envVar] || '';
+}
 
 // ---------------------------------------------------------------------------
 // Helpers (mirror src/lib/threadfin/client.ts so the script is standalone)
@@ -80,9 +93,9 @@ function decodeXmlEntities(s: string): string {
 // Stage 1: build epgId → channelId map from the raw M3U
 // ---------------------------------------------------------------------------
 
-async function buildEpgIdMap(): Promise<Map<string, string>> {
-  console.log(`[ingest-epg] reading raw M3U from ${RAW_M3U_URL}`);
-  const res = await fetch(RAW_M3U_URL);
+async function buildEpgIdMap(rawM3uUrl: string): Promise<Map<string, string>> {
+  console.log(`[ingest-epg] reading raw M3U from ${rawM3uUrl}`);
+  const res = await fetch(rawM3uUrl);
   if (!res.ok || !res.body) {
     throw new Error(`raw M3U fetch failed: ${res.status}`);
   }
@@ -166,9 +179,10 @@ function extractChildText(body: string, tag: string): string | null {
  */
 async function* streamProgrammes(
   epgIdMap: Map<string, string>,
+  rawXmltvUrl: string,
 ): AsyncGenerator<Programme> {
-  console.log(`[ingest-epg] streaming raw XMLTV from ${RAW_XMLTV_URL}`);
-  const res = await fetch(RAW_XMLTV_URL);
+  console.log(`[ingest-epg] streaming raw XMLTV from ${rawXmltvUrl}`);
+  const res = await fetch(rawXmltvUrl);
   if (!res.ok || !res.body) {
     throw new Error(`raw XMLTV fetch failed: ${res.status}`);
   }
@@ -251,6 +265,21 @@ async function* streamProgrammes(
 
 const BATCH_SIZE = 500;
 
+/** Write ingest progress to iptv_config so the setup wizard can poll it.
+ *  Best-effort — swallows failures (table may not exist on pre-009 DBs). */
+async function writeProgress(stage: string, count: number): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO iptv_config (key, value, updated_at)
+       VALUES ('epg_ingest_progress', $1, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
+      [JSON.stringify({ stage, count, ts: Date.now() })],
+    );
+  } catch {
+    // ignore
+  }
+}
+
 async function upsertBatch(rows: Programme[]): Promise<void> {
   if (rows.length === 0) return;
   const values: unknown[] = [];
@@ -285,12 +314,21 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const epgIdMap = await buildEpgIdMap();
+  // Prefer DB-backed config, fall back to env vars
+  const rawM3uUrl = await getConfigOrEnv('m3u_url', 'RAW_M3U_URL')
+    || `${THREADFIN_URL}/raw/prime.m3u`;
+  const rawXmltvUrl = await getConfigOrEnv('xmltv_url', 'RAW_XMLTV_URL')
+    || `${THREADFIN_URL}/raw/prime.xml`;
+
+  await writeProgress('scanning_m3u', 0);
+  const epgIdMap = await buildEpgIdMap(rawM3uUrl);
   if (epgIdMap.size === 0) {
     console.warn('[ingest-epg] No tvg-ids found in raw M3U — nothing to ingest.');
+    await writeProgress('done', 0);
     await pool.end();
     return;
   }
+  await writeProgress('scanning_xmltv', epgIdMap.size);
 
   const deleteResult = await pool.query(
     `DELETE FROM iptv_epg_cache WHERE end_at < NOW()`,
@@ -313,7 +351,7 @@ async function main(): Promise<void> {
     upserted += rows.length;
   }
 
-  for await (const prog of streamProgrammes(epgIdMap)) {
+  for await (const prog of streamProgrammes(epgIdMap, rawXmltvUrl)) {
     const key = `${prog.channelId}|${prog.start.toISOString()}`;
     if (buffer.has(key)) {
       seenDupes++;
@@ -322,13 +360,31 @@ async function main(): Promise<void> {
     buffer.set(key, prog);
     if (buffer.size >= BATCH_SIZE) {
       await flush();
+      // Only report progress occasionally to avoid hammering the KV.
+      if (upserted % (BATCH_SIZE * 10) === 0) {
+        await writeProgress('upserting', upserted);
+      }
     }
   }
   await flush();
+  await writeProgress('done', upserted);
 
   console.log(
     `[ingest-epg] Upserted ${upserted} programmes (${seenDupes} duplicates collapsed).`,
   );
+
+  // Record ingest timestamp so admin dashboard can show it
+  try {
+    await pool.query(
+      `INSERT INTO iptv_config (key, value, updated_at)
+       VALUES ('last_epg_ingest_at', $1, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
+      [new Date().toISOString()],
+    );
+  } catch {
+    // iptv_config may not exist if migration 009 hasn't run yet
+  }
+
   await pool.end();
 }
 

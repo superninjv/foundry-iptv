@@ -14,5 +14,9 @@ export async function GET(request: NextRequest) {
     channels = channels.filter((ch) => ch.group === category);
   }
 
-  return NextResponse.json({ channels });
+  return NextResponse.json({ channels }, {
+    headers: {
+      'Cache-Control': 'private, max-age=30, stale-while-revalidate=300',
+    },
+  });
 }

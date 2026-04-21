@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiUser, unauthorized } from '@/lib/auth/session';
 import { getDeck, updateDeck, deleteDeck, type DeckPatch } from '@/lib/decks/db';
+import { listChannels } from '@/lib/threadfin/client';
+import type { Channel } from '@/lib/threadfin/types';
 
 function parseId(raw: string): number | null {
   const n = Number(raw);
@@ -23,7 +25,28 @@ export async function GET(
   const deck = await getDeck(user.id, deckId);
   if (!deck) return NextResponse.json({ error: 'Deck not found' }, { status: 404 });
 
-  return NextResponse.json({ deck });
+  // Enrich entries with the full Channel object so native clients (FireStick,
+  // Kotlin) don't have to fetch the 52K-channel list and build an in-memory
+  // join on every DeckScreen render. `listChannels()` hits the Redis cache in
+  // 100-500ms and the resulting Map lookup is O(1) per entry. The bare
+  // `channelId` is preserved alongside `channel` for backward compatibility
+  // with any existing consumers.
+  const allChannels = await listChannels();
+  const byId = new Map<string, Channel>();
+  for (const ch of allChannels) byId.set(ch.id, ch);
+
+  const enrichedEntries = deck.entries.map((entry) => {
+    const channel = byId.get(entry.channelId) ?? null;
+    if (!channel) {
+      console.warn(
+        `[decks] entry ${entry.id} references missing channel ${entry.channelId} (deck ${deckId})`,
+      );
+    }
+    return { ...entry, channel };
+  });
+
+  const enrichedDeck = { ...deck, entries: enrichedEntries };
+  return NextResponse.json({ deck: enrichedDeck });
 }
 
 export async function PATCH(
